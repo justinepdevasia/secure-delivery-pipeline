@@ -8,9 +8,6 @@
     <!-- xunit.v3 test projects are self-hosting executables under the
          Microsoft.Testing.Platform runner. -->
     <OutputType>Exe</OutputType>
-    <!-- Opts `dotnet test` into MTP. The dotnet.config alongside this project says
-         the same thing; the MSBuild property is what the SDK targets actually read. -->
-    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 

@@ -55,7 +55,7 @@ jobs:
       - name: Test
         run: |
           set -euo pipefail
-          dotnet test tests/ApiDotnet.Tests.csproj -c Release --no-build | tee test.log
+          dotnet test --project tests/ApiDotnet.Tests.csproj -c Release --no-build | tee test.log
 
       - name: .NET summary
         if: always()
