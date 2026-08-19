@@ -234,7 +234,7 @@ quoting the actual failure output.
 Two of those five are caught by controls written in this repository rather than
 installed from somewhere.
 
-\#19 is the one worth reading. Its first run failed at the **supply chain gate**
+PR #19 is the one worth reading. Its first run failed at the **supply chain gate**
 rather than at the rollback, because the digest fallback trusted recency over
 provenance. The gate did its job and refused to deploy — but a control firing is
 also evidence that something upstream let a bad input through, so
