@@ -173,7 +173,12 @@ jobs:
             floci-ecr-registry 2>/dev/null || true
           docker network connect floci-registry \
             "floci-eks-${CLUSTER_NAME}" 2>/dev/null || true
-          docker exec "floci-eks-${CLUSTER_NAME}" getent hosts floci-ecr-registry
+          # Advisory only — the k3s image is minimal and may have neither wget nor
+          # nslookup. The image pull in the next step is the real proof.
+          docker exec "floci-eks-${CLUSTER_NAME}" sh -c \
+            'wget -q -O - http://floci-ecr-registry:5000/v2/ >/dev/null 2>&1 \
+              && echo "registry reachable from inside the cluster"' \
+            || echo "could not probe from inside the cluster; the image pull will tell us"
 
       - name: Seed the configuration secret the service reads
         run: |
