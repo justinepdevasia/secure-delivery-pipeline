@@ -52,6 +52,11 @@ ingress:
 externalSecret:
   enabled: false
 
+# A typo in a probe path is one character and passes every static check.
+probes:
+  readiness:
+    path: /readyzz
+
 datadog:
   tags:
     env: emulated
