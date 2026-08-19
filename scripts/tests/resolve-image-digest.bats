@@ -112,3 +112,54 @@ GHEOF
   run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 --fallback-latest --owner acme
   [ "$status" -eq 2 ]
 }
+
+# A stub gh that returns three SHA-tagged candidates, newest first.
+stub_gh_candidates() {
+  cat >"${STUB_DIR}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+payload='[
+  {"name":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "metadata":{"container":{"tags":["1111111111111111111111111111111111111111"]}}},
+  {"name":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "metadata":{"container":{"tags":["2222222222222222222222222222222222222222"]}}}
+]'
+for arg in "$@"; do
+  case "$arg" in --jq) next=1 ;; *) if [ "${next:-}" = 1 ]; then filter="$arg"; next=0; fi ;; esac
+done
+printf '%s' "$payload" | jq -r "$filter"
+GHEOF
+  chmod +x "${STUB_DIR}/gh"
+}
+
+@test "--verify-repo skips a candidate that does not verify" {
+  # The newest published image can be one whose build pushed and then failed
+  # before signing. Deploying it would be caught by the gate later; not choosing
+  # it in the first place is better.
+  stub docker "exit 1"
+  stub_gh_candidates
+  stub cosign "case \"\$*\" in *aaaa*) exit 1 ;; *) exit 0 ;; esac"
+  run --separate-stderr "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.digest == "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"'
+}
+
+@test "--verify-repo takes the newest candidate when it verifies" {
+  stub docker "exit 1"
+  stub_gh_candidates
+  stub cosign "exit 0"
+  run --separate-stderr "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.digest == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
+}
+
+@test "exits 4 when no fallback candidate verifies" {
+  stub docker "exit 1"
+  stub_gh_candidates
+  stub cosign "exit 1"
+  run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"passed verification"* ]]
+}

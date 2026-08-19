@@ -223,6 +223,25 @@ never being applied. That is the only thing keeping the production values honest
 
 ---
 
+## A hole this repository's own demo found
+
+`demo/failed-deploy` was meant to show a rollback. It showed something better.
+
+The deploy resolves a digest from the commit's tag, and falls back to the most
+recently published image when the commit built none of its own. "Most recently
+published" is a statement about time, not about provenance: it can be an image
+whose build pushed successfully and then failed before signing, or one built from
+a branch nobody reviewed.
+
+The gate caught it — `verify-supply-chain.sh` exited 4 and the deploy stopped, which
+is the fail-closed behaviour working exactly as designed. But relying on the gate
+to reject a bad choice is worse than not making the bad choice. `resolve-image-digest.sh`
+now takes `--verify-repo` and walks the candidates newest-first, selecting the first
+that actually verifies, and exits 4 if none of the last five do.
+
+The lesson generalises: a control that fires is evidence the control works *and*
+evidence that something upstream let a bad input through.
+
 ## Residual risk, stated plainly
 
 - **A malicious maintainer.** Every control here assumes the person merging is
