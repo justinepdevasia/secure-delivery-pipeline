@@ -39,6 +39,11 @@ Options:
                     did not itself produce an image.
   --owner NAME      Package owner for the fallback. Default $GITHUB_REPOSITORY_OWNER
   --package NAME    Container package name for the fallback, e.g. repo/service.
+  --verify-repo OWNER/NAME
+                    Verify each fallback candidate and take the first that passes.
+                    Without this the fallback trusts recency, and the most
+                    recently published image can be one whose build failed before
+                    it was signed — or one built from a branch nobody reviewed.
   --json            Emit a JSON report on stdout.
   -h, --help        Show this help and exit 0.
 
@@ -52,7 +57,7 @@ EOF
 
 main() {
   local image="" tag="${GITHUB_SHA:-}" digest="${REQUESTED:-}" attempts=6 json=false
-  local fallback=false owner="${GITHUB_REPOSITORY_OWNER:-}" package=""
+  local fallback=false owner="${GITHUB_REPOSITORY_OWNER:-}" package="" verify_repo=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -88,6 +93,11 @@ main() {
       --package)
         [[ $# -ge 2 ]] || die "--package requires an argument" "$EX_USAGE"
         package="$2"
+        shift 2
+        ;;
+      --verify-repo)
+        [[ $# -ge 2 ]] || die "--verify-repo requires an argument" "$EX_USAGE"
+        verify_repo="$2"
         shift 2
         ;;
       --json)
@@ -146,8 +156,42 @@ main() {
         "/users/${owner}/packages/container/$(printf '%s' "$package" | sed 's|/|%2F|g')/versions" \
         --jq 'map(select(
                 (.metadata.container.tags // []) | any(test("^[0-9a-f]{40}$"))
-              )) | first | .name' >"${scratch}/digest" ||
+              )) | .[].name' >"${scratch}/candidates" ||
         die "could not list published versions of ${package}" "$EX_FAIL"
+
+      if [[ -z "$verify_repo" ]]; then
+        head -n 1 "${scratch}/candidates" >"${scratch}/digest"
+      else
+        # Recency is not provenance. Walk the candidates newest first and take the
+        # first that actually verifies, so a build that pushed and then failed
+        # before signing cannot become the thing that gets deployed.
+        : >"${scratch}/digest"
+        local candidate checked=0
+        while read -r candidate; do
+          [[ -n "$candidate" ]] || continue
+          ((checked >= 5)) && break
+          checked=$((checked + 1))
+          log_info "checking fallback candidate ${candidate}"
+          local status=0
+          "${SCRIPT_DIR}/verify-supply-chain.sh" \
+            --image "$image" --digest "$candidate" --repo "$verify_repo" >/dev/null 2>&1 ||
+            status=$?
+          if ((status == 0)); then
+            log_info "candidate ${candidate} verifies"
+            printf '%s' "$candidate" >"${scratch}/digest"
+            break
+          fi
+          # Exit 4 means "this image does not verify" — try the next one. Anything
+          # else means the verifier could not run at all (a missing cosign, say),
+          # and silently reading that as "unverifiable" would reject every
+          # candidate for a reason that has nothing to do with the images.
+          ((status == EX_VERIFY)) ||
+            die "verifier could not run (exit ${status}); refusing to guess a digest" "$status"
+          log_warn "candidate ${candidate} does not verify, trying the next one"
+        done <"${scratch}/candidates"
+        [[ -s "${scratch}/digest" ]] ||
+          die "no published image among the last ${checked} candidate(s) passed verification" "$EX_VERIFY"
+      fi
     else
       log_error "${image}:${tag} did not appear within the retry budget"
       exit "$EX_TIMEOUT"
