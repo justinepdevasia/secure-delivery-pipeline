@@ -112,3 +112,73 @@ GHEOF
   run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 --fallback-latest --owner acme
   [ "$status" -eq 2 ]
 }
+
+# A gh stub that answers both uses: `gh api` for the version list, and
+# `gh attestation verify`, which verify-supply-chain.sh calls for provenance and
+# SBOM. A stub that only handles the first makes every candidate look unverifiable.
+stub_gh_candidates() {
+  cat >"${STUB_DIR}/gh" <<'GHEOF'
+#!/usr/bin/env bash
+if [ "${1:-}" != "api" ]; then
+  exit 0
+fi
+payload='[
+  {"name":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "metadata":{"container":{"tags":["1111111111111111111111111111111111111111"]}}},
+  {"name":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+   "metadata":{"container":{"tags":["2222222222222222222222222222222222222222"]}}}
+]'
+filter="."
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--jq" ]; then filter="$2"; shift; fi
+  shift
+done
+printf '%s' "$payload" | jq -r "$filter"
+GHEOF
+  chmod +x "${STUB_DIR}/gh"
+}
+
+@test "--verify-repo skips a candidate that does not verify" {
+  # The newest published image can be one whose build pushed and then failed
+  # before signing. Deploying it would be caught by the gate later; not choosing
+  # it in the first place is better.
+  stub docker "exit 1"
+  stub_gh_candidates
+  stub cosign "case \"\$*\" in *aaaa*) exit 1 ;; *) exit 0 ;; esac"
+  run --separate-stderr "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.digest == "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"'
+}
+
+@test "--verify-repo takes the newest candidate when it verifies" {
+  stub docker "exit 1"
+  stub_gh_candidates
+  stub cosign "exit 0"
+  run --separate-stderr "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.digest == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
+}
+
+@test "exits 4 when no fallback candidate verifies" {
+  stub docker "exit 1"
+  stub_gh_candidates
+  stub cosign "exit 1"
+  run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"passed verification"* ]]
+}
+
+@test "a verifier that cannot run is not mistaken for an unverifiable image" {
+  # cosign missing must fail loudly, not silently reject every candidate — which
+  # is exactly what happened when the deploy ran the verifier before installing it.
+  command -v cosign >/dev/null && skip "cosign is present in this environment"
+  stub docker "exit 1"
+  stub_gh_candidates
+  run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"verifier could not run"* ]]
+}
