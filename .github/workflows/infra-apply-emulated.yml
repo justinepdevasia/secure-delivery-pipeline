@@ -1,0 +1,98 @@
+---
+# A genuine `terraform apply` — against an AWS emulator running inside the
+# runner, not against an AWS account. What this proves: the configuration is
+# internally consistent, the dependency graph resolves, and the resources it
+# describes can actually be created in the order it describes them.
+#
+# What it does NOT prove: that the IAM policies are correctly scoped. The
+# emulator does not enforce IAM. That is what infra-test.yml asserts.
+name: infra-apply-emulated
+
+on:
+  pull_request:
+    paths:
+      - infra/aws/**
+      - .github/actions/setup-floci/**
+      - .github/workflows/infra-apply-emulated.yml
+  push:
+    branches: [main]
+    paths:
+      - infra/aws/**
+      - .github/actions/setup-floci/**
+      - .github/workflows/infra-apply-emulated.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-apply-emulated-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply-emulated:
+    name: apply against the in-runner emulator, assert, then destroy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: infra/aws
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Start the AWS emulator
+        uses: ./.github/actions/setup-floci
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Init
+        run: terraform init -backend=false -input=false
+
+      - name: Apply
+        run: |
+          set -euo pipefail
+          terraform apply -auto-approve -input=false \
+            -var-file=emulator.tfvars | tail -n 40
+
+      - name: Assert the resources exist
+        run: ../../scripts/assert-emulated-infra.sh --json | tee assertions.json
+
+      - name: Infrastructure summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Emulated infrastructure"
+            echo
+            echo "Applied by \`terraform apply\` against an in-runner AWS emulator."
+            echo "No AWS account is involved. IAM is not enforced here — see infra-test.yml."
+            echo
+            echo '```json'
+            cat assertions.json 2>/dev/null || echo '{"note":"assertions did not run"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Destroy
+        if: always()
+        run: |
+          set -euo pipefail
+          terraform destroy -auto-approve -input=false \
+            -var-file=emulator.tfvars | tail -n 10
+
+      - name: Emulator logs
+        if: always()
+        run: docker logs floci 2>&1 | tail -n 150
+
+      - name: Upload state and assertions
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: infra-apply-emulated
+          path: |
+            infra/aws/assertions.json
+            infra/aws/terraform.tfstate
+          if-no-files-found: warn
+          retention-days: 7
