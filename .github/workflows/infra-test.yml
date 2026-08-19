@@ -90,6 +90,33 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  datadog:
+    name: validate the datadog configuration
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/datadog
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init without a backend
+        run: terraform init -backend=false -input=false
+
+      # Validate only. This configuration is never planned or applied: there is no
+      # Datadog account, and every credential variable defaults to an empty string
+      # precisely so that validation needs none.
+      - name: Validate
+        run: terraform validate
+
   static-analysis:
     name: checkov and trivy config
     runs-on: ubuntu-latest
