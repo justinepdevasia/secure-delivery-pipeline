@@ -139,9 +139,14 @@ main() {
       require_cmd gh
       log_warn "${image}:${tag} does not exist; falling back to the latest published version"
       source="fallback-latest"
+      # Signatures and attestations are package versions too, and they are newer
+      # than the image they describe. Only the image itself carries a commit-SHA
+      # tag, so that is what identifies it.
       gh api \
         "/users/${owner}/packages/container/$(printf '%s' "$package" | sed 's|/|%2F|g')/versions" \
-        --jq '.[0].name' >"${scratch}/digest" ||
+        --jq 'map(select(
+                (.metadata.container.tags // []) | any(test("^[0-9a-f]{40}$"))
+              )) | first | .name' >"${scratch}/digest" ||
         die "could not list published versions of ${package}" "$EX_FAIL"
     else
       log_error "${image}:${tag} did not appear within the retry budget"

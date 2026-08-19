@@ -78,3 +78,37 @@ setup() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"not a digest"* ]]
 }
+
+@test "the fallback skips signature and attestation versions" {
+  # Signatures and attestations are published after the image and would otherwise
+  # be picked as "latest" — and then fail verification, because they are not it.
+  local image_digest="sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  stub docker "exit 1"
+  cat >"${STUB_DIR}/gh" <<GHEOF
+#!/usr/bin/env bash
+# Emulate: newest first, with a signature artifact ahead of the image.
+payload='[
+  {"name":"sha256:9999999999999999999999999999999999999999999999999999999999999999",
+   "metadata":{"container":{"tags":["sha256-4444.sig"]}}},
+  {"name":"sha256:8888888888888888888888888888888888888888888888888888888888888888",
+   "metadata":{"container":{"tags":[]}}},
+  {"name":"${image_digest}",
+   "metadata":{"container":{"tags":["6ed1ec811b0fea942b514eb32914488aaa54c3f7"]}}}
+]'
+for arg in "\$@"; do
+  case "\$arg" in --jq) next=1 ;; *) if [ "\${next:-}" = 1 ]; then filter="\$arg"; next=0; fi ;; esac
+done
+printf '%s' "\$payload" | jq -r "\$filter"
+GHEOF
+  chmod +x "${STUB_DIR}/gh"
+  run --separate-stderr "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e --arg d "$image_digest" '.digest == $d and .source == "fallback-latest"'
+}
+
+@test "--fallback-latest without --package is a usage error" {
+  stub docker "exit 1"
+  run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 --fallback-latest --owner acme
+  [ "$status" -eq 2 ]
+}
