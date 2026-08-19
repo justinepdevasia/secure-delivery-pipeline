@@ -161,6 +161,20 @@ jobs:
           aws eks update-kubeconfig --name "$CLUSTER_NAME"
           kubectl get nodes -o wide
 
+      - name: Give the cluster a route to the emulated ECR registry
+        run: |
+          set -euxo pipefail
+          # The emulator points k3s at the registry by container name, but the two
+          # containers share only the default bridge, which has no DNS. A
+          # user-defined network with an alias gives the kubelet a name it can
+          # actually resolve — otherwise every pull is ErrImagePull.
+          docker network create floci-registry >/dev/null 2>&1 || true
+          docker network connect --alias floci-ecr-registry floci-registry \
+            floci-ecr-registry 2>/dev/null || true
+          docker network connect floci-registry \
+            "floci-eks-${CLUSTER_NAME}" 2>/dev/null || true
+          docker exec "floci-eks-${CLUSTER_NAME}" getent hosts floci-ecr-registry
+
       - name: Seed the configuration secret the service reads
         run: |
           set -euxo pipefail
