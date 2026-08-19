@@ -217,6 +217,31 @@ docs/                 threat model, architecture
 
 ---
 
+## Demonstration pull requests
+
+Five pull requests, opened and closed, each introducing a real problem so the
+control that catches it can be seen firing. Every one is closed with a comment
+quoting the actual failure output.
+
+| PR | What it introduces | What caught it |
+| --- | --- | --- |
+| [#13](https://github.com/justinepdevasia/secure-delivery-pipeline/pull/13) | An action pinned to `@v7` instead of a commit SHA | [`audit-action-pins.sh`](scripts/audit-action-pins.sh) — **written here** |
+| [#16](https://github.com/justinepdevasia/secure-delivery-pipeline/pull/16) | Resource limits removed from the chart values | [`policy/workloads.rego`](policy/workloads.rego) — **written here** — and kube-linter, independently |
+| [#17](https://github.com/justinepdevasia/secure-delivery-pipeline/pull/17) | `requests==2.19.1`, a version with published advisories | Dependency Review; the pinned lockfile also refused to resolve |
+| [#18](https://github.com/justinepdevasia/secure-delivery-pipeline/pull/18) | Credentials committed in a `local.env` | GitHub push protection rejected the `git push` outright; Gitleaks caught the rest in CI |
+| [#19](https://github.com/justinepdevasia/secure-delivery-pipeline/pull/19) | A readiness probe pointing at `/readyzz` | Nothing static — only the deploy. `--atomic` rolled back and the diagnostics bundle named the 404 |
+
+Two of those five are caught by controls written in this repository rather than
+installed from somewhere.
+
+\#19 is the one worth reading. Its first run failed at the **supply chain gate**
+rather than at the rollback, because the digest fallback trusted recency over
+provenance. The gate did its job and refused to deploy — but a control firing is
+also evidence that something upstream let a bad input through, so
+[#21](https://github.com/justinepdevasia/secure-delivery-pipeline/pull/21) fixed
+the fallback to verify candidates before choosing one. The demo then failed the
+way it was meant to.
+
 ## Further reading
 
 - [`docs/threat-model.md`](docs/threat-model.md) — the controls table above, in prose, with what each control does *not* cover
