@@ -23,18 +23,18 @@ resources:
 
 env:
   appEnv: emulated
-  useSecretsManager: "true"
+  remoteConfig: "true"
   # Resolved to the emulator's in-cluster address by the deploy workflow.
   awsEndpointUrl: ""
   extra:
-    - name: AWS_ACCESS_KEY_ID
-      value: "test"
-    - name: AWS_SECRET_ACCESS_KEY
-      value: "test"
     - name: AWS_DEFAULT_REGION
       value: "us-east-1"
 
-# IRSA does not exist here, so the pod uses the static emulator credentials above.
+# IRSA does not exist under the emulator, so the pod needs static credentials.
+# They are not written here: the deploy workflow creates this Secret with
+# `kubectl create secret generic`, and the pod reads it through envFrom. Even a
+# throwaway credential does not belong in a values file that gets committed.
+envFromSecret: emulator-aws-credentials
 serviceAccount:
   create: true
   annotations: {}

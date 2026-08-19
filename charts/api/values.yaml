@@ -79,9 +79,13 @@ probes:
 
 env:
   appEnv: local
-  useSecretsManager: "false"
+  remoteConfig: "false"
   awsEndpointUrl: ""
   extra: []
+
+# Name of an existing Secret to load into the environment via envFrom. Credentials
+# reach the pod this way, never as literal values in a committed file.
+envFromSecret: ""
 
 podLabels: {}
 podAnnotations: {}
@@ -92,6 +96,7 @@ affinity: {}
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
 
 autoscaling:
   enabled: false

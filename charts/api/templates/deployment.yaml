@@ -75,8 +75,8 @@ spec:
           env:
             - name: APP_ENV
               value: {{ .Values.env.appEnv | quote }}
-            - name: APP_USE_SECRETS_MANAGER
-              value: {{ .Values.env.useSecretsManager | quote }}
+            - name: APP_REMOTE_CONFIG
+              value: {{ .Values.env.remoteConfig | quote }}
             {{- with .Values.env.awsEndpointUrl }}
             - name: AWS_ENDPOINT_URL
               value: {{ . | quote }}
@@ -84,6 +84,11 @@ spec:
             {{- with .Values.env.extra }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- with .Values.envFromSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
           volumeMounts:
             # readOnlyRootFilesystem is on, so anything that needs to write gets
             # an explicit emptyDir rather than a writable root.

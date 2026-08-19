@@ -43,7 +43,7 @@ def test_load_secret_round_trips_through_the_emulator(seeded_secret: str) -> Non
 def test_settings_are_sourced_from_secrets_manager(
     seeded_secret: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("APP_USE_SECRETS_MANAGER", "true")
+    monkeypatch.setenv("APP_REMOTE_CONFIG", "true")
     monkeypatch.setenv("APP_SECRET_ID", seeded_secret)
     config.get_settings.cache_clear()
     settings = config.get_settings()
@@ -54,7 +54,7 @@ def test_settings_are_sourced_from_secrets_manager(
 
 
 def test_missing_secret_falls_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("APP_USE_SECRETS_MANAGER", "true")
+    monkeypatch.setenv("APP_REMOTE_CONFIG", "true")
     monkeypatch.setenv("APP_SECRET_ID", "secure-delivery-pipeline/does-not-exist")
     config.get_settings.cache_clear()
     assert config.get_settings().secrets_source == "defaults"

@@ -135,7 +135,7 @@ externalSecret:
 
 env:
   appEnv: production
-  useSecretsManager: "true"
+  remoteConfig: "true"
   awsEndpointUrl: ""
 
 podLabels:
