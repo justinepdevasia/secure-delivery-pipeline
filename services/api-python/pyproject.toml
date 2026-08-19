@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "api-python"
+version = "0.1.0"
+description = "Demo FastAPI service exercised by the secure-delivery-pipeline"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.52.3",
+  "pydantic==2.13.4",
+  "boto3==1.43.74",
+  "prometheus-client==0.26.0",
+  "python-json-logger==4.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "pytest-cov==7.1.0",
+  "httpx==0.28.1",
+  "ruff==0.16.3",
+  "mypy==2.3.1",
+  "boto3-stubs[secretsmanager]==1.43.74",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=api_python --cov-report=term-missing --cov-report=xml --cov-fail-under=85"
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["integration: requires a running AWS emulator at AWS_ENDPOINT_URL"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/api_python"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "SIM", "RET", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "ANN"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["api_python"]
