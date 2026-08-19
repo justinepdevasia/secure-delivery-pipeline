@@ -50,3 +50,30 @@ terraform -chdir=infra/aws test
 A finding you intend not to fix needs a reason and an expiry date — in
 `.trivyignore.yaml`, or as an inline `#checkov:skip=ID: reason`. An undated
 suppression is how a scanner quietly stops being a control.
+
+## Branch protection
+
+`main` carries a ruleset (`gh api repos/OWNER/REPO/rulesets`) with:
+
+- deletion blocked
+- force-push blocked
+- required status checks: `gitleaks`, `pip-audit`
+
+Only checks that run on **every** pull request are required. The language and
+chart workflows are path-filtered, so requiring them would leave a docs-only pull
+request waiting forever on a check that never starts.
+
+A `pull_request` rule requiring an approving review is deliberately **not**
+enabled: this repository has one maintainer, and the rule blocks self-merge even
+at `required_approving_review_count: 0`. On a team repository, add it:
+
+```jsonc
+{"type": "pull_request", "parameters": {
+  "required_approving_review_count": 1,
+  "require_code_owner_review": true,
+  "dismiss_stale_reviews_on_push": true,
+  "required_review_thread_resolution": true
+}}
+```
+
+CODEOWNERS is already in place for that day.
