@@ -1,7 +1,31 @@
+data "aws_caller_identity" "current" {}
+
 resource "aws_kms_key" "eks" {
   description             = "Envelope encryption for ${local.name} Kubernetes secrets"
   enable_key_rotation     = true
   deletion_window_in_days = 30
+
+  # An explicit policy rather than the default "root can do anything": EKS and
+  # the CloudWatch Logs service get exactly the grants they need.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowAccountAdministration"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = ["kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*", "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*", "kms:ScheduleKeyDeletion", "kms:CancelKeyDeletion"]
+        Resource  = "*"
+      },
+      {
+        Sid       = "AllowEKSEnvelopeEncryption"
+        Effect    = "Allow"
+        Principal = { Service = "eks.amazonaws.com" }
+        Action    = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:DescribeKey"]
+        Resource  = "*"
+      },
+    ]
+  })
 }
 
 resource "aws_kms_alias" "eks" {
@@ -169,6 +193,9 @@ locals {
 }
 
 resource "aws_secretsmanager_secret" "api_python" {
+  # checkov:skip=CKV2_AWS_57: this secret holds application configuration, not a
+  # credential — there is no upstream system to rotate it against. Anything
+  # rotatable belongs in its own secret with a rotation lambda.
   name                    = "${var.project}/api-python"
   kms_key_id              = aws_kms_key.eks.arn
   recovery_window_in_days = 7

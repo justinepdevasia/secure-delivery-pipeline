@@ -92,9 +92,12 @@ variable "ecr_repositories" {
 }
 
 variable "log_retention_days" {
-  description = "CloudWatch log retention for the control plane."
+  description = <<-EOT
+    CloudWatch log retention. A year, because the questions that need audit logs
+    ("when did this identity first appear?") are usually asked months later.
+  EOT
   type        = number
-  default     = 90
+  default     = 365
 }
 
 variable "emulator" {

@@ -22,6 +22,12 @@ resource "aws_iam_role" "karpenter_controller" {
 }
 
 resource "aws_iam_role_policy" "karpenter_controller" {
+  # checkov:skip=CKV_AWS_355: ec2:Describe* and RunInstances have no resource-level
+  # ARN to scope to — Karpenter has to enumerate instance types and launch into
+  # subnets it discovers. The mutating actions are constrained by the cluster
+  # ownership tag conditions below, which is the control that actually bounds them.
+  # checkov:skip=CKV_AWS_288: the wildcards are read-only describes plus
+  # tag-conditioned launches; there is no data-bearing service in this policy.
   name = "provision-nodes"
   role = aws_iam_role.karpenter_controller.id
 

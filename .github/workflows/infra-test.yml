@@ -72,8 +72,12 @@ jobs:
             echo "### Terraform"
             echo
             echo '```'
-            grep -E "^(run |Success!|Failure!|  Warning:|Error:)" terraform-test.log \
-              || tail -n 20 terraform-test.log
+            if [[ -f terraform-test.log ]]; then
+              grep -E "^(run |Success!|Failure!|Error:)" terraform-test.log \
+                || tail -n 20 terraform-test.log
+            else
+              echo "terraform test did not run"
+            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

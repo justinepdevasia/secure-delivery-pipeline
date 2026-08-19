@@ -7,6 +7,10 @@ terraform {
       # Pinned: a provider is as much of a supply chain dependency as an action.
       version = "~> 6.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }
 

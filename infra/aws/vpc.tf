@@ -20,6 +20,13 @@ resource "aws_vpc" "this" {
   tags = { Name = local.name }
 }
 
+# The default security group cannot be deleted, so it is emptied instead:
+# anything that lands in it by accident can talk to nothing.
+resource "aws_default_security_group" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = { Name = "${local.name}-default-deny" }
+}
+
 resource "aws_flow_log" "vpc" {
   vpc_id               = aws_vpc.this.id
   traffic_type         = "REJECT"
