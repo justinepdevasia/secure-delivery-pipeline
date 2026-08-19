@@ -22,6 +22,10 @@ dev = [
 # Workflows call these names, never `python path/to/file.py`.
 [project.scripts]
 workflow-audit = "pipeline_tools.workflow_audit:main"
+sbom-diff = "pipeline_tools.sbom_diff:main"
+dora-metrics = "pipeline_tools.dora:main"
+datadog-gate = "pipeline_tools.datadog_gate:main"
+pr-comment = "pipeline_tools.pr_comment:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -45,7 +49,7 @@ select = ["E", "F", "I", "UP", "B", "S", "SIM", "RET", "ANN"]
 ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "S105", "ANN"]
+"tests/*" = ["S101", "S105", "S106", "ANN"]
 
 [tool.mypy]
 python_version = "3.11"

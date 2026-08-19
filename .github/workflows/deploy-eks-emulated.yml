@@ -99,6 +99,19 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --json | tee verification.json
 
+      - name: Install pipeline-tools
+        run: pip install --quiet ./tools
+
+      - name: Gate — refuse to deploy on top of an alerting service
+        env:
+          # No Datadog account exists here, so the gate runs in dry-run and logs
+          # the exact request it would send. Set DD_DRY_RUN=false with real keys
+          # and the same command becomes a live gate.
+          DD_DRY_RUN: "true"
+        run: |
+          set -euo pipefail
+          datadog-gate --service api-python --env emulated --json | tee datadog-gate.json
+
       - name: Start the AWS emulator
         uses: ./.github/actions/setup-floci
 
@@ -237,6 +250,16 @@ jobs:
             || echo "no previous revision to roll back to"
           scripts/collect-diagnostics.sh --namespace "$NAMESPACE" --release "$RELEASE" || true
 
+      - name: DORA metrics
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          dora-metrics --workflow deploy-eks-emulated.yml --branch main --days 30 \
+            --json | tee dora.json
+
       - name: Deployment summary
         if: always()
         run: |
@@ -251,7 +274,7 @@ jobs:
             echo "| stage | result |"
             echo "| --- | --- |"
             echo "| digest | \`${{ steps.digest.outputs.digest }}\` |"
-            for f in verification.json promotion.json rollout.json smoke.json; do
+            for f in datadog-gate.json verification.json promotion.json rollout.json smoke.json; do
               [[ -f "$f" ]] && echo "| ${f%.json} | \`$(jq -c '{ok}' "$f" 2>/dev/null || echo '{}')\` |"
             done
             echo
@@ -277,10 +300,12 @@ jobs:
         with:
           name: deploy-emulated-evidence
           path: |
+            datadog-gate.json
             verification.json
             promotion.json
             rollout.json
             smoke.json
+            dora.json
             diagnostics.tar.gz
           if-no-files-found: warn
           retention-days: 14

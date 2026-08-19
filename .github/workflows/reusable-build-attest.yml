@@ -30,6 +30,11 @@ on:
         required: false
         type: string
         default: 65532:65532
+      baseline_workflow:
+        description: Workflow whose last successful main run supplies the SBOM baseline
+        required: false
+        type: string
+        default: ci-python.yml
       push:
         description: Push, sign and attest. False on forked PRs, which have no token.
         required: false
@@ -55,6 +60,8 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      # Only to post the sticky SBOM diff comment.
+      pull-requests: write
     outputs:
       digest: ${{ steps.push.outputs.digest }}
       image: ${{ steps.meta.outputs.image }}
@@ -172,6 +179,39 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
+      - name: Diff the SBOM against the last successful build on main
+        if: inputs.push
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Best effort by design: the very first build has nothing to diff
+          # against, and a missing baseline must not fail a release.
+          pip install --quiet ./tools
+          previous="$(gh run list --workflow "${{ inputs.baseline_workflow }}" \
+            --branch main --status success --limit 1 --json databaseId \
+            --jq '.[0].databaseId // empty')"
+          if [[ -z "$previous" ]]; then
+            echo "no previous successful build to diff against" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh run download "$previous" -n "sbom-${{ inputs.image_name }}" -D baseline
+          sbom-diff --before "baseline/sbom.cyclonedx.json" --after sbom.cyclonedx.json \
+            --before-label "main@${previous}" --after-label "${GITHUB_SHA:0:7}" \
+            --markdown-out sbom-diff.md --json | tee sbom-diff.json
+
+      - name: Post the SBOM diff as a sticky pull request comment
+        if: inputs.push && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -s sbom-diff.md || exit 0
+          pr-comment --name "sbom-diff-${{ inputs.image_name }}" \
+            --pr "${{ github.event.pull_request.number }}" --body-file sbom-diff.md
+
       - name: Attest the SBOM against the digest
         if: inputs.push
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
@@ -238,5 +278,7 @@ jobs:
           path: |
             sbom.cyclonedx.json
             sbom.spdx.json
+            sbom-diff.md
+            sbom-diff.json
           if-no-files-found: warn
           retention-days: 30

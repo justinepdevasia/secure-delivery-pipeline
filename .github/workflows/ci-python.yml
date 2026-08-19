@@ -112,6 +112,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      pull-requests: write
     uses: ./.github/workflows/reusable-build-attest.yml
     with:
       service_path: services/api-python

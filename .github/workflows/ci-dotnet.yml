@@ -86,10 +86,12 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+      pull-requests: write
     uses: ./.github/workflows/reusable-build-attest.yml
     with:
       service_path: services/api-dotnet
       image_name: api-dotnet
+      baseline_workflow: ci-dotnet.yml
       health_path: /healthz
       expected_user: "1654:1654"
       push: ${{ !github.event.pull_request.head.repo.fork }}
