@@ -5,6 +5,10 @@
 # succeeding against it proves the graph resolves and nothing else. These
 # assertions are what actually prove the policies are scoped, and they run with
 # no AWS account, no credentials and no network.
+#
+# Every run here uses `command = apply` because the policies being asserted on
+# embed values that are only known after create — the cluster's OIDC issuer, the
+# node role ARN. Against mocked providers an apply talks to nothing.
 
 mock_provider "aws" {
   # A mocked data source returns nothing by default, so the values the
@@ -23,12 +27,44 @@ mock_provider "aws" {
 
   mock_resource "aws_eks_cluster" {
     defaults = {
+      arn = "arn:aws:eks:us-east-1:000000000000:cluster/mocked"
       identity = [{
         oidc = [{
           issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"
         }]
       }]
     }
+  }
+
+  # A mocked apply generates random strings for computed attributes, and the AWS
+  # provider validates that anything called an ARN looks like one. These defaults
+  # keep the fakes well-formed.
+  mock_resource "aws_iam_role" {
+    defaults = { arn = "arn:aws:iam::000000000000:role/mocked" }
+  }
+
+  mock_resource "aws_iam_openid_connect_provider" {
+    defaults = { arn = "arn:aws:iam::000000000000:oidc-provider/mocked" }
+  }
+
+  mock_resource "aws_kms_key" {
+    defaults = { arn = "arn:aws:kms:us-east-1:000000000000:key/mocked" }
+  }
+
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = { arn = "arn:aws:logs:us-east-1:000000000000:log-group:mocked" }
+  }
+
+  mock_resource "aws_sqs_queue" {
+    defaults = { arn = "arn:aws:sqs:us-east-1:000000000000:mocked" }
+  }
+
+  mock_resource "aws_ecr_repository" {
+    defaults = { arn = "arn:aws:ecr:us-east-1:000000000000:repository/mocked" }
+  }
+
+  mock_resource "aws_secretsmanager_secret" {
+    defaults = { arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:mocked" }
   }
 }
 
@@ -43,7 +79,7 @@ mock_provider "tls" {
 }
 
 run "github_trust_policy_has_no_wildcard_subject" {
-  command = plan
+  command = apply
 
   assert {
     condition = alltrue([
@@ -54,7 +90,7 @@ run "github_trust_policy_has_no_wildcard_subject" {
 }
 
 run "github_trust_policy_is_scoped_to_this_repository" {
-  command = plan
+  command = apply
 
   assert {
     condition = alltrue([
@@ -76,7 +112,7 @@ run "github_trust_policy_is_scoped_to_this_repository" {
 }
 
 run "audience_is_pinned_to_sts" {
-  command = plan
+  command = apply
 
   assert {
     condition     = strcontains(aws_iam_role.github_actions.assume_role_policy, "sts.amazonaws.com")
@@ -85,10 +121,6 @@ run "audience_is_pinned_to_sts" {
 }
 
 run "irsa_roles_are_scoped_to_one_service_account" {
-  # apply, not plan: an IRSA trust policy embeds the cluster's OIDC issuer, which
-  # is only known once the cluster exists. Against mocked providers this applies
-  # to fakes — no AWS call is made — and the mock_resource default above supplies
-  # the issuer the policy is built from.
   command = apply
 
   assert {
@@ -108,7 +140,7 @@ run "irsa_roles_are_scoped_to_one_service_account" {
 }
 
 run "karpenter_cannot_terminate_instances_it_does_not_own" {
-  command = plan
+  command = apply
 
   assert {
     condition     = strcontains(aws_iam_role_policy.karpenter_controller.policy, "aws:ResourceTag/kubernetes.io/cluster/")
@@ -122,7 +154,7 @@ run "karpenter_cannot_terminate_instances_it_does_not_own" {
 }
 
 run "ci_role_cannot_push_to_arbitrary_repositories" {
-  command = plan
+  command = apply
 
   assert {
     condition     = strcontains(aws_iam_role_policy.github_actions_ecr.policy, "PushToProjectRepositoriesOnly")
