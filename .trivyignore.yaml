@@ -1,0 +1,15 @@
+# Trivy suppressions. Every entry needs a reason and an expiry date — an
+# undated ignore file is how a scanner quietly stops being a control.
+#
+# Reviewed by: repository owner
+# Review cadence: whenever an entry expires, or when the base image is bumped.
+vulnerabilities:
+  - id: CVE-2026-72522
+    statement: >
+      libexpat denial of service via incorrect Unicode surrogate handling.
+      Not reachable: api-python parses no XML, and expat is present only as a
+      transitive dependency of the distroless base. The fix
+      (libexpat1 2.8.3-1~deb13u1) has not yet landed in
+      gcr.io/distroless/python3-debian13. Re-pin the base image and delete this
+      entry once it has.
+    expired_at: 2026-10-01

@@ -6,11 +6,13 @@ on:
     paths:
       - services/api-python/**
       - .github/workflows/ci-python.yml
+      - .github/workflows/reusable-build-attest.yml
   push:
     branches: [main]
     paths:
       - services/api-python/**
       - .github/workflows/ci-python.yml
+      - .github/workflows/reusable-build-attest.yml
 
 permissions:
   contents: read
@@ -101,3 +103,18 @@ jobs:
             services/api-python/junit.xml
           if-no-files-found: warn
           retention-days: 7
+
+  build:
+    name: build, scan, sign and verify
+    needs: [lint, test]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/reusable-build-attest.yml
+    with:
+      service_path: services/api-python
+      image_name: api-python
+      # Forked PRs have no write token; build and scan, but skip push/sign/attest.
+      push: ${{ !github.event.pull_request.head.repo.fork }}
