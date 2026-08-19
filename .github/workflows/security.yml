@@ -1,0 +1,209 @@
+---
+# Every control here either blocks a merge or files a code-scanning alert.
+# Two of them — audit-action-pins.sh and workflow-audit — are written in this
+# repository rather than installed, because they enforce this repository's own rules.
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, so a CVE published after the last commit still surfaces.
+    - cron: "27 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ACTIONLINT_VERSION: 1.7.12
+  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+  ZIZMOR_VERSION: 1.29.0
+  PIP_AUDIT_VERSION: 2.10.1
+
+jobs:
+  codeql:
+    name: codeql (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          category: /language:${{ matrix.language }}
+
+  dependency-review:
+    name: dependency review
+    runs-on: ubuntu-latest
+    # Only meaningful on a pull request: it diffs the base against the head.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install "pip-audit==${PIP_AUDIT_VERSION}"
+
+      - name: Audit the committed lockfiles
+        run: |
+          set -euo pipefail
+          pip-audit --strict --requirement services/api-python/requirements.txt \
+            | tee pip-audit.txt
+          {
+            echo "### pip-audit"
+            echo
+            echo '```'
+            cat pip-audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A secret deleted in a later commit is still a leaked secret.
+          fetch-depth: 0
+
+      - name: Scan history for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  workflow-lint:
+    name: actionlint, zizmor and the repository's own auditors
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install actionlint (pinned, checksum verified)
+        run: |
+          set -euxo pipefail
+          base="https://github.com/rhysd/actionlint/releases/download"
+          file="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "/tmp/${file}" "${base}/v${ACTIONLINT_VERSION}/${file}"
+          echo "${ACTIONLINT_SHA256}  /tmp/${file}" | sha256sum -c -
+          tar -xzf "/tmp/${file}" -C /tmp actionlint
+          sudo install -m 0755 /tmp/actionlint /usr/local/bin/actionlint
+
+      - name: Actionlint
+        run: actionlint -color
+
+      - name: Install zizmor and pipeline-tools
+        run: pip install "zizmor==${ZIZMOR_VERSION}" ./tools
+
+      - name: Zizmor
+        run: zizmor --format sarif --persona regular . > zizmor.sarif
+
+      - name: Upload zizmor SARIF
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+      - name: Action pin audit — this repository's own rule, with drift reporting
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          scripts/audit-action-pins.sh --drift --json | tee action-pins.json
+
+      - name: Workflow audit — this repository's own checks
+        run: |
+          set -euo pipefail
+          workflow-audit .github/workflows --json | tee workflow-audit.json
+
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: security-audits
+          path: |
+            action-pins.json
+            workflow-audit.json
+            zizmor.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+  scorecard:
+    name: openssf scorecard
+    runs-on: ubuntu-latest
+    # Scorecard's branch-protection and signing probes only make sense on main.
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload scorecard SARIF
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
