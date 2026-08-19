@@ -11,6 +11,12 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
+  # An OIDC provider ARN is fully determined by the account and the issuer host,
+  # so it is derived rather than read back from the resource. Referencing the
+  # computed attribute would make every trust policy unknown until apply, and an
+  # assertion cannot inspect an unknown value.
+  github_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+
   # Built with jsonencode rather than aws_iam_policy_document so the value is a
   # real configured argument: `terraform test` with a mocked provider can then
   # assert on it, which it cannot do for a data source's computed output.
@@ -18,7 +24,7 @@ locals {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+      Principal = { Federated = local.github_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
@@ -42,6 +48,9 @@ resource "aws_iam_role" "github_actions" {
   max_session_duration = 3600
 
   tags = { Repository = var.github_repository }
+
+  # The ARN above is derived, so the dependency is stated rather than implied.
+  depends_on = [aws_iam_openid_connect_provider.github]
 
   lifecycle {
     # Enforced on every plan, not only in `terraform test`: a subject that names

@@ -3,13 +3,14 @@
 # Kubernetes custom resources and live in karpenter/, validated by manifests.yml.
 
 resource "aws_iam_role" "karpenter_controller" {
-  name = "${local.name}-karpenter"
+  name       = "${local.name}-karpenter"
+  depends_on = [aws_iam_openid_connect_provider.eks]
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_openid_connect_provider.eks.arn }
+      Principal = { Federated = local.eks_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {

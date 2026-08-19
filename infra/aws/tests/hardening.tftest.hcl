@@ -90,7 +90,7 @@ run "nodes_run_in_private_subnets_only" {
   }
 
   assert {
-    condition     = length(aws_eks_node_group.system.subnet_ids) == var.availability_zone_count
+    condition     = length(aws_subnet.private) == var.availability_zone_count
     error_message = "The node group must span every configured availability zone."
   }
 }

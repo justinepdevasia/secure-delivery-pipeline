@@ -172,13 +172,14 @@ resource "aws_iam_openid_connect_provider" "eks" {
 # IRSA role for the api-python service account. Scoped to one namespace and one
 # service account, not to the whole cluster.
 resource "aws_iam_role" "api_python" {
-  name = "${local.name}-api-python"
+  name       = "${local.name}-api-python"
+  depends_on = [aws_iam_openid_connect_provider.eks]
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = aws_iam_openid_connect_provider.eks.arn }
+      Principal = { Federated = local.eks_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
@@ -192,6 +193,9 @@ resource "aws_iam_role" "api_python" {
 
 locals {
   oidc_host = replace(aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
+  # Derived for the same reason as the GitHub provider ARN: an unknown value
+  # cannot be asserted on.
+  eks_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/${local.oidc_host}"
 }
 
 resource "aws_secretsmanager_secret" "api_python" {
