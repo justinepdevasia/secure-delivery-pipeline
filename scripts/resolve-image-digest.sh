@@ -33,6 +33,12 @@ Options:
                     An empty value is ignored, so a workflow can pass an
                     optional input straight through.
   --attempts N      Resolution attempts, with exponential backoff. Default 6
+  --fallback-latest Fall back to the most recently published version of the
+                    package when the tag does not exist. Needs gh and a token
+                    with packages:read. Used when a deploy runs for a commit that
+                    did not itself produce an image.
+  --owner NAME      Package owner for the fallback. Default $GITHUB_REPOSITORY_OWNER
+  --package NAME    Container package name for the fallback, e.g. repo/service.
   --json            Emit a JSON report on stdout.
   -h, --help        Show this help and exit 0.
 
@@ -46,6 +52,7 @@ EOF
 
 main() {
   local image="" tag="${GITHUB_SHA:-}" digest="${REQUESTED:-}" attempts=6 json=false
+  local fallback=false owner="${GITHUB_REPOSITORY_OWNER:-}" package=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -67,6 +74,20 @@ main() {
       --attempts)
         [[ $# -ge 2 ]] || die "--attempts requires an argument" "$EX_USAGE"
         attempts="$2"
+        shift 2
+        ;;
+      --fallback-latest)
+        fallback=true
+        shift
+        ;;
+      --owner)
+        [[ $# -ge 2 ]] || die "--owner requires an argument" "$EX_USAGE"
+        owner="$2"
+        shift 2
+        ;;
+      --package)
+        [[ $# -ge 2 ]] || die "--package requires an argument" "$EX_USAGE"
+        package="$2"
         shift 2
         ;;
       --json)
@@ -105,9 +126,24 @@ main() {
     trap "rm -rf '${scratch}'" EXIT
 
     log_info "resolving ${image}:${tag}"
-    if ! RETRY_BASE_DELAY="${RETRY_BASE_DELAY:-10}" retry_with_backoff "$attempts" \
+    if RETRY_BASE_DELAY="${RETRY_BASE_DELAY:-10}" retry_with_backoff "$attempts" \
       bash -c "docker buildx imagetools inspect '${image}:${tag}' \
         --format '{{.Manifest.Digest}}' > '${scratch}/digest'"; then
+      :
+    elif [[ "$fallback" == true ]]; then
+      # This commit produced no image of its own — a change to scripts or charts,
+      # for example. Deploying the most recently published digest is correct:
+      # it still has to pass the signature and provenance gate downstream.
+      [[ -n "$owner" && -n "$package" ]] ||
+        die "--fallback-latest needs --owner and --package" "$EX_USAGE"
+      require_cmd gh
+      log_warn "${image}:${tag} does not exist; falling back to the latest published version"
+      source="fallback-latest"
+      gh api \
+        "/users/${owner}/packages/container/$(printf '%s' "$package" | sed 's|/|%2F|g')/versions" \
+        --jq '.[0].name' >"${scratch}/digest" ||
+        die "could not list published versions of ${package}" "$EX_FAIL"
+    else
       log_error "${image}:${tag} did not appear within the retry budget"
       exit "$EX_TIMEOUT"
     fi

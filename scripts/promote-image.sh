@@ -145,6 +145,8 @@ main() {
     log_warn "promoting without verification — PROMOTE_ALLOW_UNSIGNED is set"
   fi
 
+  local target_digest="$digest"
+
   if [[ "$dry_run" == true ]]; then
     log_info "dry-run: docker pull ${source_ref}"
     log_info "dry-run: docker tag ${source_ref} ${target_ref}"
@@ -154,14 +156,35 @@ main() {
     retry_with_backoff 3 docker pull "$source_ref"
     docker tag "$source_ref" "$target_ref"
     retry_with_backoff 3 docker push "$target_ref"
+
+    # Re-uploading a manifest to a different registry does not have to preserve
+    # its digest, so the target digest is read back rather than assumed. Anything
+    # downstream must pin the digest that actually exists where it will be pulled
+    # from — pinning the source digest would produce an unpullable reference.
+    if resolved="$(docker buildx imagetools inspect "$target_ref" \
+      --format '{{.Manifest.Digest}}' 2>/dev/null)"; then
+      resolved="$(printf '%s' "$resolved" | tr -d '[:space:]')"
+      if [[ "$resolved" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+        target_digest="$resolved"
+      fi
+    fi
+    [[ "$target_digest" == "$digest" ]] ||
+      log_info "target digest differs from source: ${target_digest}"
+  fi
+
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    {
+      echo "digest=${target_digest}"
+      echo "reference=${target}@${target_digest}"
+    } >>"$GITHUB_OUTPUT"
   fi
 
   if [[ "$json" == true ]]; then
-    printf '{"ok":true,"source":"%s","target":"%s","digest":"%s","dry_run":%s}\n' \
+    printf '{"ok":true,"source":"%s","target":"%s","digest":"%s","target_digest":"%s","dry_run":%s}\n' \
       "$(json_escape "$source_ref")" "$(json_escape "$target_ref")" \
-      "$(json_escape "$digest")" "$dry_run"
+      "$(json_escape "$digest")" "$(json_escape "$target_digest")" "$dry_run"
   fi
-  log_info "promoted ${source_ref} to ${target_ref}"
+  log_info "promoted ${source_ref} to ${target}@${target_digest}"
 }
 
 main "$@"

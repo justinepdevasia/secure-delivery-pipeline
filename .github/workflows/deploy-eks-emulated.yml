@@ -75,7 +75,15 @@ jobs:
         id: digest
         env:
           REQUESTED: ${{ inputs.digest }}
-        run: scripts/resolve-image-digest.sh --image "$SOURCE_IMAGE" --tag "$GITHUB_SHA"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # A commit that changes only charts or scripts builds no image of its
+          # own, so the deploy falls back to the latest published digest — which
+          # still has to clear the verification gate below.
+          scripts/resolve-image-digest.sh \
+            --image "$SOURCE_IMAGE" --tag "$GITHUB_SHA" --attempts 3 \
+            --fallback-latest --package "${GITHUB_REPOSITORY#*/}/api-python"
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -111,6 +119,7 @@ jobs:
           echo "uri=${uri}" >> "$GITHUB_OUTPUT"
 
       - name: Promote the verified image into the emulated ECR, by digest
+        id: promote
         run: |
           set -euo pipefail
           scripts/promote-image.sh \
@@ -173,7 +182,7 @@ jobs:
             --namespace "$NAMESPACE" \
             --values charts/api/values-emulator.yaml \
             --set image.repository="${{ steps.ecr.outputs.uri }}" \
-            --set image.digest="${{ steps.digest.outputs.digest }}" \
+            --set image.digest="${{ steps.promote.outputs.digest }}" \
             --set env.awsEndpointUrl="$endpoint" \
             --wait --timeout 6m --atomic
 

@@ -124,3 +124,32 @@ stub_verifier_fail() {
   [ "$status" -eq 0 ]
   grep -q "docker push" "$CALLS"
 }
+
+@test "reports the digest the image has at the target, not the source digest" {
+  # Re-uploading a manifest can change its digest; deploying the source digest
+  # would produce a reference that cannot be pulled from the target registry.
+  local target_digest="sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  stub_verifier_pass
+  stub docker \
+    "echo \"docker \$*\" >>'${CALLS}'" \
+    "if [ \"\$1\" = buildx ]; then echo '${target_digest}'; fi" \
+    "exit 0"
+  GITHUB_OUTPUT="${BATS_TEST_TMPDIR}/out" run --separate-stderr "$PROMOTE" \
+    --source "$SOURCE" --target "$TARGET" --repo "$REPO" --digest "$DIGEST" --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e --arg t "$target_digest" --arg s "$DIGEST" \
+    '.target_digest == $t and .digest == $s'
+  grep -q "digest=${target_digest}" "${BATS_TEST_TMPDIR}/out"
+}
+
+@test "falls back to the source digest when the target cannot be inspected" {
+  stub_verifier_pass
+  stub docker \
+    "echo \"docker \$*\" >>'${CALLS}'" \
+    "if [ \"\$1\" = buildx ]; then exit 1; fi" \
+    "exit 0"
+  run --separate-stderr "$PROMOTE" --source "$SOURCE" --target "$TARGET" \
+    --repo "$REPO" --digest "$DIGEST" --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e --arg s "$DIGEST" '.target_digest == $s'
+}
