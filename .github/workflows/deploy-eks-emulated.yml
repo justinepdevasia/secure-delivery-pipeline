@@ -82,7 +82,7 @@ jobs:
           # own, so the deploy falls back to the latest published digest — which
           # still has to clear the verification gate below.
           scripts/resolve-image-digest.sh \
-            --image "$SOURCE_IMAGE" --tag "$GITHUB_SHA" --attempts 3 \
+            --image "$SOURCE_IMAGE" --tag "$GITHUB_SHA" --attempts 5 \
             --fallback-latest --package "${GITHUB_REPOSITORY#*/}/api-python"
 
       - name: Install cosign
@@ -199,8 +199,13 @@ jobs:
       - name: Helm upgrade --install, by digest
         run: |
           set -euxo pipefail
-          # The emulator is reachable from inside k3s on the host gateway address.
-          endpoint="http://$(ip -4 route show default | awk '{print $3; exit}'):4566"
+          # The emulator publishes 4566 on the host. Pods reach it through the
+          # bridge gateway of the k3s container, not through the runner's own
+          # default gateway — that address means nothing inside the cluster.
+          gateway="$(docker inspect "floci-eks-${CLUSTER_NAME}" \
+            --format '{{.NetworkSettings.Networks.bridge.Gateway}}')"
+          endpoint="http://${gateway}:4566"
+          test -n "$gateway"
           helm upgrade --install "$RELEASE" ./charts/api \
             --namespace "$NAMESPACE" \
             --values charts/api/values-emulator.yaml \
