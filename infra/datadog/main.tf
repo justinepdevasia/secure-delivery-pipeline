@@ -239,7 +239,7 @@ resource "datadog_dashboard" "service" {
   }
 
   widget {
-    slo_definition {
+    service_level_objective_definition {
       title        = "Availability SLO"
       slo_id       = datadog_service_level_objective.availability.id
       time_windows = ["30d"]
