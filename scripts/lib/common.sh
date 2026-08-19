@@ -73,10 +73,13 @@ retry_with_backoff() {
   local status=0
 
   while ((attempt <= max_attempts)); do
-    if "$@"; then
+    # `|| status=$?` both captures the real exit status and shields it from set -e;
+    # `if cmd; then` would leave $? as 0 when the condition fails.
+    status=0
+    "$@" || status=$?
+    if ((status == 0)); then
       return 0
     fi
-    status=$?
     if ((attempt == max_attempts)); then
       log_error "command failed after ${attempt} attempt(s): $*"
       return "$status"
