@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipeline-tools"
+version = "0.1.0"
+description = "CLI tooling the delivery pipeline calls: workflow auditing, SBOM diffing, DORA metrics"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["PyYAML==6.0.3"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "pytest-cov==7.1.0",
+  "ruff==0.16.3",
+  "mypy==2.3.1",
+  "types-PyYAML==6.0.12.20260815",
+]
+
+# Workflows call these names, never `python path/to/file.py`.
+[project.scripts]
+workflow-audit = "pipeline_tools.workflow_audit:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=pipeline_tools --cov-report=term-missing --cov-report=xml --cov-fail-under=85"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/pipeline_tools"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S", "SIM", "RET", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "ANN"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["pipeline_tools"]
