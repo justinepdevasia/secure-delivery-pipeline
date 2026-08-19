@@ -1,0 +1,93 @@
+---
+name: ci-scripts
+
+on:
+  pull_request:
+    paths:
+      - scripts/**
+      - tools/**
+      - .github/workflows/**
+  push:
+    branches: [main]
+    paths:
+      - scripts/**
+      - tools/**
+      - .github/workflows/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SHFMT_VERSION: v3.13.1
+  SHFMT_SHA256: fb096c5d1ac6beabbdbaa2874d025badb03ee07929f0c9ff67563ce8c75398b1
+
+jobs:
+  bash:
+    name: bash lint, format and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install shfmt (pinned, checksum verified)
+        run: |
+          set -euxo pipefail
+          url="https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
+          curl -fsSLo /tmp/shfmt "$url"
+          echo "${SHFMT_SHA256}  /tmp/shfmt" | sha256sum -c -
+          sudo install -m 0755 /tmp/shfmt /usr/local/bin/shfmt
+
+      - name: Install bats
+        uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
+        with:
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+
+      - name: Assert scripts are executable
+        run: |
+          set -euo pipefail
+          missing=0
+          for script in scripts/*.sh; do
+            test -x "$script" || { echo "not executable: $script"; missing=1; }
+          done
+          exit "$missing"
+
+      - name: Shellcheck
+        run: shellcheck --severity=style scripts/*.sh scripts/lib/*.sh
+
+      - name: Shfmt
+        run: shfmt -d -i 2 -ci scripts/
+
+      - name: Bats unit tests
+        run: |
+          set -euo pipefail
+          bats --formatter tap scripts/tests/ | tee bats.tap
+
+      - name: Bash summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Bash"
+            echo
+            echo "| check | result |"
+            echo "| --- | --- |"
+            echo "| shellcheck --severity=style | ${{ job.status }} |"
+            echo "| shfmt -d -i 2 -ci | ${{ job.status }} |"
+            echo "| bats | $(grep -c '^ok ' bats.tap || echo 0) passed, $(grep -c '^not ok ' bats.tap || echo 0) failed |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bats output
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bats-tap
+          path: bats.tap
+          if-no-files-found: warn
+          retention-days: 7
