@@ -1,6 +1,6 @@
 ---
-# Throwaway harness for testing a single step in isolation.
-# Deleted before publishing (see buildspec.md §12, phase 16).
+# Throwaway harness for testing one step in isolation without running the full
+# pipeline. Deleted before publishing (see buildspec.md §12, phase 16).
 name: scratch
 
 on:
@@ -9,23 +9,100 @@ on:
       note:
         description: What is being tested
         required: false
-        default: nothing in particular
+        default: floci capability probe
 
 permissions:
   contents: read
 
+env:
+  FLOCI_IMAGE: floci/floci@sha256:bec9b9f749322444a57fb0f00d3e007ffd49015162361aab84ccecd9b4f5f8ed
+  AWS_ENDPOINT_URL: http://localhost:4566
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+
 jobs:
-  scratch:
-    name: scratch
+  probe:
+    name: probe the emulator
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Report runner context
+      - name: Free disk space
         run: |
           set -euxo pipefail
-          echo "note: ${{ inputs.note }}" >> "$GITHUB_STEP_SUMMARY"
-          uname -a
-          docker version --format '{{.Server.Version}}'
-          df -h / | tee -a "$GITHUB_STEP_SUMMARY"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: Start Floci
+        run: |
+          set -euxo pipefail
+          docker run -d --name floci -p 4566:4566 -u root \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$FLOCI_IMAGE"
+
+      - name: Wait for health
+        run: scripts/wait-for-endpoint.sh --url "${AWS_ENDPOINT_URL}/_localstack/health" --timeout 120
+
+      - name: Probe each service the pipeline depends on
+        run: |
+          set -uo pipefail
+          probe() {
+            local label="$1"; shift
+            if out=$("$@" 2>&1); then
+              echo "PASS  ${label}"
+            else
+              echo "FAIL  ${label}: $(echo "$out" | tail -n 1 | cut -c1-160)"
+            fi
+          }
+          probe "sts get-caller-identity" aws sts get-caller-identity
+          probe "iam create-role" aws iam create-role --role-name probe \
+            --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
+          probe "iam create-oidc-provider" aws iam create-open-id-connect-provider \
+            --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com \
+            --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+          probe "secretsmanager create-secret" aws secretsmanager create-secret --name probe --secret-string '{"a":"b"}'
+          probe "kms create-key" aws kms create-key
+          probe "logs create-log-group" aws logs create-log-group --log-group-name /probe
+          probe "sqs create-queue" aws sqs create-queue --queue-name probe
+          probe "events put-rule" aws events put-rule --name probe --event-pattern '{"source":["aws.ec2"]}'
+          probe "ecr create-repository" aws ecr create-repository --repository-name probe/app
+          probe "ec2 create-vpc" aws ec2 create-vpc --cidr-block 10.42.0.0/16
+          probe "ec2 describe-availability-zones" aws ec2 describe-availability-zones
+          probe "ec2 create-internet-gateway" aws ec2 create-internet-gateway
+          probe "ec2 allocate-address" aws ec2 allocate-address --domain vpc
+          probe "eks list-clusters" aws eks list-clusters
+
+      - name: Probe EKS cluster creation with real k3s
+        run: |
+          set -uo pipefail
+          vpc=$(aws ec2 create-vpc --cidr-block 10.99.0.0/16 --query Vpc.VpcId --output text 2>/dev/null || echo "")
+          subnet=$(aws ec2 create-subnet --vpc-id "$vpc" --cidr-block 10.99.1.0/24 \
+            --query Subnet.SubnetId --output text 2>/dev/null || echo "")
+          echo "vpc=$vpc subnet=$subnet"
+          role=$(aws iam create-role --role-name eks-probe \
+            --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"eks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
+            --query Role.Arn --output text 2>/dev/null || echo "")
+          start=$(date +%s)
+          aws eks create-cluster --name probe --role-arn "$role" \
+            --resources-vpc-config "subnetIds=${subnet}" || { echo "create-cluster FAILED"; exit 0; }
+          for _ in $(seq 1 60); do
+            status=$(aws eks describe-cluster --name probe --query cluster.status --output text 2>/dev/null || echo UNKNOWN)
+            echo "status=${status} elapsed=$(($(date +%s) - start))s"
+            [[ "$status" == "ACTIVE" ]] && break
+            sleep 10
+          done
+          aws eks update-kubeconfig --name probe && kubectl get nodes -o wide || echo "kubectl FAILED"
+          kubectl version || true
+
+      - name: Floci logs
+        if: always()
+        run: docker logs floci 2>&1 | tail -n 120
+
+      - name: Disk and containers
+        if: always()
+        run: |
+          df -h /
+          docker ps -a
