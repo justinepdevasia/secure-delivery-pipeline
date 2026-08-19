@@ -153,23 +153,39 @@ main() {
     log_info "dry-run: docker push ${target_ref}"
   else
     require_cmd docker
+
+    local scratch
+    scratch="$(make_scratch_dir)"
+    # shellcheck disable=SC2064  # scratch is expanded now on purpose
+    trap "rm -rf '${scratch}'" EXIT
+
     retry_with_backoff 3 docker pull "$source_ref"
     docker tag "$source_ref" "$target_ref"
-    retry_with_backoff 3 docker push "$target_ref"
+    # Captured to a file rather than teed: stdout carries the --json report and
+    # nothing else, which is the whole point of having a --json mode.
+    retry_with_backoff 3 bash -c \
+      "docker push '${target_ref}' >'${scratch}/push.log' 2>&1"
+    cat "${scratch}/push.log" >&2
 
-    # Re-uploading a manifest to a different registry does not have to preserve
-    # its digest, so the target digest is read back rather than assumed. Anything
-    # downstream must pin the digest that actually exists where it will be pulled
-    # from — pinning the source digest would produce an unpullable reference.
-    if resolved="$(docker buildx imagetools inspect "$target_ref" \
-      --format '{{.Manifest.Digest}}' 2>/dev/null)"; then
-      resolved="$(printf '%s' "$resolved" | tr -d '[:space:]')"
-      if [[ "$resolved" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-        target_digest="$resolved"
-      fi
+    # `docker pull` of a multi-arch index fetches one platform's manifest, so the
+    # push writes a different manifest — with a different digest — to the target.
+    # Deploying the source digest here would produce a reference that does not
+    # exist in the target registry, which is an ImagePullBackOff at 3am.
+    # The push output is the authoritative statement of what was written.
+    local resolved
+    resolved="$(grep -oE 'digest: sha256:[0-9a-f]{64}' "${scratch}/push.log" |
+      tail -n 1 | awk '{print $2}' || true)"
+    if [[ ! "$resolved" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+      resolved="$(docker buildx imagetools inspect "$target_ref" \
+        --format '{{.Manifest.Digest}}' 2>/dev/null | tr -d '[:space:]' || true)"
+    fi
+    if [[ "$resolved" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+      target_digest="$resolved"
+    else
+      log_warn "could not determine the digest written to ${target}; using the source digest"
     fi
     [[ "$target_digest" == "$digest" ]] ||
-      log_info "target digest differs from source: ${target_digest}"
+      log_info "target digest differs from source (expected across registries): ${target_digest}"
   fi
 
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then

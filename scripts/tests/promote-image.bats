@@ -132,7 +132,7 @@ stub_verifier_fail() {
   stub_verifier_pass
   stub docker \
     "echo \"docker \$*\" >>'${CALLS}'" \
-    "if [ \"\$1\" = buildx ]; then echo '${target_digest}'; fi" \
+    "if [ \"\$1\" = push ]; then echo 'latest: digest: ${target_digest} size: 1234'; fi" \
     "exit 0"
   GITHUB_OUTPUT="${BATS_TEST_TMPDIR}/out" run --separate-stderr "$PROMOTE" \
     --source "$SOURCE" --target "$TARGET" --repo "$REPO" --digest "$DIGEST" --json
@@ -142,7 +142,7 @@ stub_verifier_fail() {
   grep -q "digest=${target_digest}" "${BATS_TEST_TMPDIR}/out"
 }
 
-@test "falls back to the source digest when the target cannot be inspected" {
+@test "falls back to the source digest when the push output reveals nothing" {
   stub_verifier_pass
   stub docker \
     "echo \"docker \$*\" >>'${CALLS}'" \
