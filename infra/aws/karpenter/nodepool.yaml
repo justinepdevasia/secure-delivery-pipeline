@@ -1,0 +1,49 @@
+---
+# Karpenter's scheduling policy. Applied to a real EKS cluster; validated here by
+# manifests.yml against a vendored CRD schema, never applied by this repository.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: default
+spec:
+  template:
+    metadata:
+      labels:
+        workload: general
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      # 720h forces node rotation once a month, which is what actually keeps AMIs
+      # patched. Without it, nodes live until something else evicts them.
+      expireAfter: 720h
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: [amd64, arm64]
+        - key: kubernetes.io/os
+          operator: In
+          values: [linux]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [spot, on-demand]
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: [c, m, r]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["5"]
+  disruption:
+    # WhenEmptyOrUnderutilized consolidates aggressively; the 5m wait stops it
+    # thrashing on a workload that scales up and down inside a minute.
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 5m
+    budgets:
+      - nodes: "10%"
+      - nodes: "0"
+        schedule: "0 9 * * mon-fri"
+        duration: 8h
+  limits:
+    cpu: "200"
+    memory: 800Gi
