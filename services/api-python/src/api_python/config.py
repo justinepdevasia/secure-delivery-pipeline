@@ -89,7 +89,7 @@ def _as_int(value: str, fallback: int) -> int:
 def get_settings() -> Settings:
     """Resolve settings once per process: Secrets Manager first, then defaults."""
     secret_id = os.getenv("APP_SECRET_ID", DEFAULT_SECRET_ID)
-    secret = load_secret(secret_id) if os.getenv("APP_USE_SECRETS_MANAGER") == "true" else {}
+    secret = load_secret(secret_id) if os.getenv("APP_REMOTE_CONFIG") == "true" else {}
     return Settings(
         environment=secret.get("environment", os.getenv("APP_ENV", "local")),
         order_page_size=_as_int(secret.get("order_page_size", "50"), 50),

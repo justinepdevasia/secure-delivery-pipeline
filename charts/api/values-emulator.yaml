@@ -1,0 +1,59 @@
+# Actually deployed, by deploy-eks-emulated.yml, to the k3s cluster the AWS
+# emulator stands up inside the runner. Deliberately small: one replica, no
+# ingress, no IRSA, resource requests that fit alongside a registry and a
+# control plane on a 2-core runner.
+
+replicaCount: 1
+
+image:
+  # The workflow overrides this with --set image.digest=<verified digest>.
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 192Mi
+
+env:
+  appEnv: emulated
+  remoteConfig: "true"
+  # Resolved to the emulator's in-cluster address by the deploy workflow.
+  awsEndpointUrl: ""
+  extra:
+    - name: AWS_DEFAULT_REGION
+      value: "us-east-1"
+
+# IRSA does not exist under the emulator, so the pod needs static credentials.
+# They are not written here: the deploy workflow creates this Secret with
+# `kubectl create secret generic`, and the pod reads it through envFrom. Even a
+# throwaway credential does not belong in a values file that gets committed.
+envFromSecret: emulator-aws-credentials
+serviceAccount:
+  create: true
+  annotations: {}
+
+podDisruptionBudget:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+ingress:
+  enabled: false
+
+# The External Secrets Operator is not installed in the emulated cluster.
+externalSecret:
+  enabled: false
+
+datadog:
+  tags:
+    env: emulated
+    service: api-python
+    version: "0.1.0"

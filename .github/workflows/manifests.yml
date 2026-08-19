@@ -1,0 +1,112 @@
+---
+# values-emulator.yaml is what actually gets deployed; values-prod.yaml is never
+# applied anywhere. Both are rendered and validated identically, which is the only
+# thing keeping the production values honest.
+name: manifests
+
+on:
+  pull_request:
+    paths:
+      - charts/**
+      - policy/**
+      - schemas/**
+      - scripts/render-manifests.sh
+      - .github/workflows/manifests.yml
+  push:
+    branches: [main]
+    paths:
+      - charts/**
+      - policy/**
+      - schemas/**
+      - scripts/render-manifests.sh
+      - .github/workflows/manifests.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manifests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KUBECONFORM_VERSION: v0.8.0
+  KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+  KUBE_LINTER_VERSION: v0.8.3
+  KUBE_LINTER_SHA256: 1a6d8419b11971372971fdbc22682b684ebfb7cf1c39591662d1b6ca736c41df
+  CONFTEST_VERSION: 0.69.0
+  CONFTEST_SHA256: 96fc2fbf11f0afde51256647127e6f00a64ce839a4d9a0a1aef2426c0e6f4b3f
+
+jobs:
+  validate:
+    name: render and validate (${{ matrix.values }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        values: [values-emulator.yaml, values-prod.yaml]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Install kubeconform, kube-linter and conftest (pinned, checksum verified)
+        run: |
+          set -euxo pipefail
+          curl -fsSLo /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo /tmp/kube-linter.tar.gz \
+            "https://github.com/stackrox/kube-linter/releases/download/${KUBE_LINTER_VERSION}/kube-linter-linux.tar.gz"
+          curl -fsSLo /tmp/conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          printf '%s  /tmp/kubeconform.tar.gz\n%s  /tmp/kube-linter.tar.gz\n%s  /tmp/conftest.tar.gz\n' \
+            "$KUBECONFORM_SHA256" "$KUBE_LINTER_SHA256" "$CONFTEST_SHA256" | sha256sum -c -
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          tar -xzf /tmp/kube-linter.tar.gz -C /tmp kube-linter
+          tar -xzf /tmp/conftest.tar.gz -C /tmp conftest
+          sudo install -m 0755 /tmp/kubeconform /tmp/kube-linter /tmp/conftest /usr/local/bin/
+
+      - name: Helm lint
+        run: helm lint charts/api --values "charts/api/${{ matrix.values }}"
+
+      - name: Render and validate
+        run: |
+          set -euo pipefail
+          scripts/render-manifests.sh \
+            --values "charts/api/${{ matrix.values }}" \
+            --out "rendered-${{ matrix.values }}" \
+            --json | tee "manifest-report-${{ matrix.values }}.json"
+
+      - name: Trivy config scan of the rendered manifest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: rendered-${{ matrix.values }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+
+      - name: Manifest summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### Manifests — ${{ matrix.values }}"
+            echo
+            echo '```json'
+            cat "manifest-report-${{ matrix.values }}.json" 2>/dev/null || echo '{"note":"render did not complete"}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload rendered manifests
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rendered-${{ matrix.values }}
+          path: |
+            rendered-${{ matrix.values }}
+            manifest-report-${{ matrix.values }}.json
+          if-no-files-found: warn
+          retention-days: 14

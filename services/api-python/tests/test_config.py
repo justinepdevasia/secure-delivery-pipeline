@@ -59,7 +59,7 @@ def test_load_secret_returns_empty_on_bad_payload(
 def test_get_settings_uses_defaults_when_secrets_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("APP_USE_SECRETS_MANAGER", raising=False)
+    monkeypatch.delenv("APP_REMOTE_CONFIG", raising=False)
     monkeypatch.setenv("APP_ENV", "unit")
     config.get_settings.cache_clear()
     settings = config.get_settings()
@@ -72,7 +72,7 @@ def test_get_settings_uses_defaults_when_secrets_disabled(
 def test_get_settings_reads_secret_values(monkeypatch: pytest.MonkeyPatch) -> None:
     secret = {"environment": "emulated", "order_page_size": "1", "feature_orders_v2": "true"}
     _patch_client(monkeypatch, _FakeClient({"SecretString": json.dumps(secret)}))
-    monkeypatch.setenv("APP_USE_SECRETS_MANAGER", "true")
+    monkeypatch.setenv("APP_REMOTE_CONFIG", "true")
     config.get_settings.cache_clear()
     settings = config.get_settings()
     assert (settings.environment, settings.order_page_size, settings.feature_orders_v2) == (
@@ -85,7 +85,7 @@ def test_get_settings_reads_secret_values(monkeypatch: pytest.MonkeyPatch) -> No
 
 def test_get_settings_survives_a_non_numeric_page_size(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_client(monkeypatch, _FakeClient({"SecretString": '{"order_page_size": "many"}'}))
-    monkeypatch.setenv("APP_USE_SECRETS_MANAGER", "true")
+    monkeypatch.setenv("APP_REMOTE_CONFIG", "true")
     config.get_settings.cache_clear()
     assert config.get_settings().order_page_size == 50
 

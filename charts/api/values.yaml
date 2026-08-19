@@ -1,0 +1,123 @@
+# Defaults. Both values-emulator.yaml and values-prod.yaml layer on top of this.
+# Everything security-relevant defaults to the strict setting; an environment has
+# to opt out deliberately rather than forget to opt in.
+
+replicaCount: 1
+revisionHistoryLimit: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/justinepdevasia/secure-delivery-pipeline/api-python
+  # Deploys set image.digest. A tag here is a fallback for `helm template` only.
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+rollingUpdate:
+  maxUnavailable: 0
+  maxSurge: 1
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+automountServiceAccountToken: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+  annotations: {}
+
+# Requests are what the scheduler reserves; limits are the blast radius.
+# CPU limit is 4x the request because this is a bursty request/response service —
+# throttling it at the request would add latency for no capacity benefit. Memory
+# limit is only 2x the request because memory is not compressible: exceeding it
+# is an OOM kill, so the gap is a safety margin, not headroom to grow into.
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 200m
+    memory: 192Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  privileged: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+probes:
+  liveness:
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+env:
+  appEnv: local
+  remoteConfig: "false"
+  awsEndpointUrl: ""
+  extra: []
+
+# Name of an existing Secret to load into the environment via envFrom. Credentials
+# reach the pod this way, never as literal values in a committed file.
+envFromSecret: ""
+
+podLabels: {}
+podAnnotations: {}
+
+topologySpreadConstraints: []
+affinity: {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  externalMetric: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+
+externalSecret:
+  enabled: false
+  refreshInterval: 1h
+  remoteKey: secure-delivery-pipeline/api-python
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+
+datadog:
+  tags: {}
