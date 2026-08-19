@@ -1,0 +1,151 @@
+# NEVER APPLIED. Validated on every pull request — helm template, kubeconform
+# -strict against vendored CRD schemas, kube-linter, and this repository's own
+# conftest policies — but no cluster ever receives it.
+#
+# IRSA and the AWS Load Balancer Controller cannot work under the in-runner
+# emulator: IRSA needs a real OIDC provider federated with real IAM, and the ALB
+# Controller needs a real AWS account to call. That is precisely why they live in
+# this file rather than in values-emulator.yaml. Blurring the two would be the
+# dishonest version of this repository.
+
+replicaCount: 3
+revisionHistoryLimit: 5
+
+image:
+  repository: 000000000000.dkr.ecr.us-east-1.amazonaws.com/secure-delivery-pipeline/api-python
+  # Production deploys are by digest, resolved by the release pipeline.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+rollingUpdate:
+  maxUnavailable: 0
+  maxSurge: 1
+
+# IRSA: the pod assumes this role through the cluster's OIDC provider. No static
+# credentials, no node role sharing, nothing to rotate.
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::000000000000:role/secure-delivery-pipeline-api-python
+    eks.amazonaws.com/sts-regional-endpoints: "true"
+
+automountServiceAccountToken: true
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    # CPU limit is 4x the request: a request/response service is bursty, and
+    # throttling at the request would add tail latency without saving capacity.
+    cpu: "1"
+    # Memory limit is 2x the request: memory is not compressible, so this gap is
+    # an OOM safety margin, not headroom the service is expected to grow into.
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  privileged: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  capabilities:
+    drop: [ALL]
+  seccompProfile:
+    type: RuntimeDefault
+
+# One pod per AZ minimum, and refuse to schedule rather than silently collapse
+# onto a single zone — a spread that degrades under pressure is not a spread.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+
+podDisruptionBudget:
+  enabled: true
+  # With replicaCount 3, this lets one pod drain at a time during node rotation.
+  minAvailable: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 70
+  externalMetric:
+    name: datadogmetric@monitoring:api-python-requests
+    matchLabels:
+      service: api-python
+    averageValue: "200"
+
+# AWS Load Balancer Controller. Internet-facing ALB, IP targets so traffic goes
+# straight to pod IPs rather than through a node port hop.
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/success-codes: "200"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:000000000000:certificate/00000000-0000-0000-0000-000000000000
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/load-balancer-attributes: routing.http2.enabled=true
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  remoteKey: secure-delivery-pipeline/api-python
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: ClusterSecretStore
+
+env:
+  appEnv: production
+  useSecretsManager: "true"
+  awsEndpointUrl: ""
+
+podLabels:
+  admission.datadoghq.com/enabled: "true"
+
+podAnnotations:
+  admission.datadoghq.com/python-lib.version: v2
+
+datadog:
+  tags:
+    env: production
+    service: api-python
+    version: "0.1.0"

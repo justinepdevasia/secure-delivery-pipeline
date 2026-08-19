@@ -1,0 +1,35 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "api.fullname" . }}
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "api.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- with .Values.autoscaling.externalMetric }}
+    # Datadog's cluster agent serves this through the external metrics API.
+    - type: External
+      external:
+        metric:
+          name: {{ .name }}
+          selector:
+            matchLabels:
+              {{- toYaml .matchLabels | nindent 14 }}
+        target:
+          type: AverageValue
+          averageValue: {{ .averageValue | quote }}
+    {{- end }}
+{{- end }}
