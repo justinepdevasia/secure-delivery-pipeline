@@ -1,0 +1,22 @@
+# Development lockfile. Fully pinned, transitives included.
+-r requirements.txt
+ast_serialize==0.8.0
+boto3-stubs==1.43.74
+botocore-stubs==1.43.67
+certifi==2026.7.22
+coverage==7.15.4
+httpcore==1.0.9
+httpx==0.28.1
+iniconfig==2.3.0
+librt==0.15.0
+mypy==2.3.1
+mypy-boto3-secretsmanager==1.43.0
+mypy_extensions==1.1.0
+packaging==26.3
+pathspec==1.1.1
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.3
+types-s3transfer==0.16.0
