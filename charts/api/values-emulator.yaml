@@ -14,10 +14,13 @@ service:
   port: 80
 
 # Limits removed "temporarily, to unblock a load test" — the way it usually happens.
+# Explicit nulls, because Helm deep-merges values: simply omitting the block here
+# would leave the defaults from values.yaml in place.
 resources:
   requests:
     cpu: 25m
     memory: 64Mi
+  limits: null
 
 env:
   appEnv: emulated
