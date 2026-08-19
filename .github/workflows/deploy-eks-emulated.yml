@@ -120,6 +120,10 @@ jobs:
 
       - name: Promote the verified image into the emulated ECR, by digest
         id: promote
+        env:
+          # promote-image.sh verifies again before pushing — defence in depth, and
+          # `gh attestation verify` needs a token to read the attestations.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           scripts/promote-image.sh \
