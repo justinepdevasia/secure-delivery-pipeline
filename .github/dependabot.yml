@@ -1,0 +1,72 @@
+---
+# Actions are pinned to commit SHAs, which is what makes Dependabot necessary
+# rather than optional: a pinned SHA never picks up a security fix on its own.
+# Dependabot opens the PR, and audit-action-pins.sh --drift reports the gap in
+# the meantime.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies, github-actions]
+    groups:
+      # One PR for the routine bumps; anything major still lands on its own so it
+      # gets read.
+      actions-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /services/api-python
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies, python]
+    groups:
+      python-minor:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies, python]
+
+  - package-ecosystem: nuget
+    directory: /services/api-dotnet
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies, dotnet]
+
+  - package-ecosystem: docker
+    directories:
+      - /services/api-python
+      - /services/api-dotnet
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies, docker]
+
+  - package-ecosystem: terraform
+    directory: /infra/aws
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps)"
+    labels: [dependencies, terraform]

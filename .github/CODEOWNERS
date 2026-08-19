@@ -1,0 +1,22 @@
+# Every path has an owner. The interesting entries are the ones below the
+# catch-all: the files where a bad change is hardest to spot in review.
+
+*                                   @justinepdevasia
+
+# Workflows can grant themselves permissions and exfiltrate secrets. They get an
+# explicit rule so the ownership survives a future catch-all change.
+/.github/workflows/                 @justinepdevasia
+/.github/actions/                   @justinepdevasia
+
+# The controls that enforce the repository's own rules.
+/scripts/audit-action-pins.sh       @justinepdevasia
+/scripts/verify-supply-chain.sh     @justinepdevasia
+/tools/src/pipeline_tools/          @justinepdevasia
+/policy/                            @justinepdevasia
+
+# A suppression is a deliberate decision to accept a finding.
+/.trivyignore.yaml                  @justinepdevasia
+
+# IAM trust policies are where a wildcard turns into account access.
+/infra/aws/iam-github-oidc.tf       @justinepdevasia
+/infra/aws/tests/                   @justinepdevasia
