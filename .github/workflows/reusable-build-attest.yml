@@ -105,6 +105,8 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
+          # Dated, justified suppressions only — see the file header.
+          trivyignores: .trivyignore.yaml
 
       - name: Upload Trivy SARIF
         if: always()
