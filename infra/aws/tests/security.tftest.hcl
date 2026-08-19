@@ -6,8 +6,41 @@
 # assertions are what actually prove the policies are scoped, and they run with
 # no AWS account, no credentials and no network.
 
-mock_provider "aws" {}
-mock_provider "tls" {}
+mock_provider "aws" {
+  # A mocked data source returns nothing by default, so the values the
+  # configuration actually indexes into have to be supplied here.
+  mock_data "aws_availability_zones" {
+    defaults = {
+      names = ["us-east-1a", "us-east-1b", "us-east-1c"]
+    }
+  }
+
+  mock_data "aws_caller_identity" {
+    defaults = {
+      account_id = "000000000000"
+    }
+  }
+
+  mock_resource "aws_eks_cluster" {
+    defaults = {
+      identity = [{
+        oidc = [{
+          issuer = "https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"
+        }]
+      }]
+    }
+  }
+}
+
+mock_provider "tls" {
+  mock_data "tls_certificate" {
+    defaults = {
+      certificates = [{
+        sha1_fingerprint = "9e99a48a9960b14926bb7f3b02e22da2b0ab7280"
+      }]
+    }
+  }
+}
 
 run "github_trust_policy_has_no_wildcard_subject" {
   command = plan

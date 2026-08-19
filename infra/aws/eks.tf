@@ -50,8 +50,10 @@ resource "aws_security_group" "cluster" {
 
 resource "aws_vpc_security_group_egress_rule" "cluster_https" {
   security_group_id = aws_security_group.cluster.id
-  description       = "Control plane to nodes and AWS APIs over HTTPS"
-  cidr_ipv4         = "0.0.0.0/0"
+  description       = "Control plane to nodes over HTTPS, inside the VPC only"
+  # Scoped to the VPC rather than 0.0.0.0/0: the control plane ENIs only ever
+  # need to reach nodes, and unrestricted egress is an exfiltration path.
+  cidr_ipv4 = var.vpc_cidr
   from_port         = 443
   to_port           = 443
   ip_protocol       = "tcp"
