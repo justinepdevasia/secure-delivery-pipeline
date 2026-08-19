@@ -71,6 +71,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
       - name: Resolve the digest to deploy
         id: digest
         env:
@@ -85,9 +88,6 @@ jobs:
             --image "$SOURCE_IMAGE" --tag "$GITHUB_SHA" --attempts 5 \
             --fallback-latest --package "${GITHUB_REPOSITORY#*/}/api-python" \
             --verify-repo "$GITHUB_REPOSITORY"
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Gate — verify the supply chain before anything else happens
         env:

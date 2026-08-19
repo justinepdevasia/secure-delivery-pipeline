@@ -113,18 +113,25 @@ GHEOF
   [ "$status" -eq 2 ]
 }
 
-# A stub gh that returns three SHA-tagged candidates, newest first.
+# A gh stub that answers both uses: `gh api` for the version list, and
+# `gh attestation verify`, which verify-supply-chain.sh calls for provenance and
+# SBOM. A stub that only handles the first makes every candidate look unverifiable.
 stub_gh_candidates() {
   cat >"${STUB_DIR}/gh" <<'GHEOF'
 #!/usr/bin/env bash
+if [ "${1:-}" != "api" ]; then
+  exit 0
+fi
 payload='[
   {"name":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
    "metadata":{"container":{"tags":["1111111111111111111111111111111111111111"]}}},
   {"name":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
    "metadata":{"container":{"tags":["2222222222222222222222222222222222222222"]}}}
 ]'
-for arg in "$@"; do
-  case "$arg" in --jq) next=1 ;; *) if [ "${next:-}" = 1 ]; then filter="$arg"; next=0; fi ;; esac
+filter="."
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--jq" ]; then filter="$2"; shift; fi
+  shift
 done
 printf '%s' "$payload" | jq -r "$filter"
 GHEOF
@@ -162,4 +169,16 @@ GHEOF
     --fallback-latest --owner acme --package app/api --verify-repo acme/app
   [ "$status" -eq 4 ]
   [[ "$output" == *"passed verification"* ]]
+}
+
+@test "a verifier that cannot run is not mistaken for an unverifiable image" {
+  # cosign missing must fail loudly, not silently reject every candidate — which
+  # is exactly what happened when the deploy ran the verifier before installing it.
+  command -v cosign >/dev/null && skip "cosign is present in this environment"
+  stub docker "exit 1"
+  stub_gh_candidates
+  run "$RESOLVE" --image "$IMAGE" --tag abc123 --attempts 1 \
+    --fallback-latest --owner acme --package app/api --verify-repo acme/app
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"verifier could not run"* ]]
 }

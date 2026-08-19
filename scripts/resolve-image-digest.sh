@@ -172,12 +172,21 @@ main() {
           ((checked >= 5)) && break
           checked=$((checked + 1))
           log_info "checking fallback candidate ${candidate}"
-          if "${SCRIPT_DIR}/verify-supply-chain.sh" \
-            --image "$image" --digest "$candidate" --repo "$verify_repo" >/dev/null 2>&1; then
+          local status=0
+          "${SCRIPT_DIR}/verify-supply-chain.sh" \
+            --image "$image" --digest "$candidate" --repo "$verify_repo" >/dev/null 2>&1 ||
+            status=$?
+          if ((status == 0)); then
             log_info "candidate ${candidate} verifies"
             printf '%s' "$candidate" >"${scratch}/digest"
             break
           fi
+          # Exit 4 means "this image does not verify" — try the next one. Anything
+          # else means the verifier could not run at all (a missing cosign, say),
+          # and silently reading that as "unverifiable" would reject every
+          # candidate for a reason that has nothing to do with the images.
+          ((status == EX_VERIFY)) ||
+            die "verifier could not run (exit ${status}); refusing to guess a digest" "$status"
           log_warn "candidate ${candidate} does not verify, trying the next one"
         done <"${scratch}/candidates"
         [[ -s "${scratch}/digest" ]] ||
