@@ -85,7 +85,11 @@ run "audience_is_pinned_to_sts" {
 }
 
 run "irsa_roles_are_scoped_to_one_service_account" {
-  command = plan
+  # apply, not plan: an IRSA trust policy embeds the cluster's OIDC issuer, which
+  # is only known once the cluster exists. Against mocked providers this applies
+  # to fakes — no AWS call is made — and the mock_resource default above supplies
+  # the issuer the policy is built from.
+  command = apply
 
   assert {
     condition     = strcontains(aws_iam_role.api_python.assume_role_policy, "system:serviceaccount:default:api-api")
