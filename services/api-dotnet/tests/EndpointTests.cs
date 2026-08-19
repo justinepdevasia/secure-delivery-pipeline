@@ -11,23 +11,27 @@ public class EndpointTests(WebApplicationFactory<Program> factory)
 {
     private readonly HttpClient _client = factory.CreateClient();
 
+    // xUnit v3 wants every cancellable call wired to the test's token so a
+    // cancelled run stops promptly instead of blocking on HTTP.
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     [Fact]
     public async Task Healthz_ReturnsOk()
     {
-        var response = await _client.GetAsync("/healthz");
+        var response = await _client.GetAsync("/healthz", Ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
         Assert.Equal("ok", body.GetProperty("status").GetString());
     }
 
     [Fact]
     public async Task Readyz_ReportsTheEnvironment()
     {
-        var response = await _client.GetAsync("/readyz");
+        var response = await _client.GetAsync("/readyz", Ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
         Assert.Equal("ready", body.GetProperty("status").GetString());
         Assert.False(string.IsNullOrWhiteSpace(body.GetProperty("environment").GetString()));
     }
@@ -35,10 +39,10 @@ public class EndpointTests(WebApplicationFactory<Program> factory)
     [Fact]
     public async Task ListOrders_ReturnsTheFixtureEnvelope()
     {
-        var response = await _client.GetAsync("/api/v1/orders");
+        var response = await _client.GetAsync("/api/v1/orders", Ct);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
         Assert.Equal(1, body.GetProperty("count").GetInt32());
         Assert.Equal("ord-1a2b3c4d", body.GetProperty("items")[0].GetProperty("id").GetString());
     }
@@ -52,10 +56,10 @@ public class EndpointTests(WebApplicationFactory<Program> factory)
             items = new[] { new { sku = "WIDGET-01", quantity = 2, unit_price_cents = 500 } },
         };
 
-        var response = await _client.PostAsJsonAsync("/api/v1/orders", payload);
+        var response = await _client.PostAsJsonAsync("/api/v1/orders", payload, Ct);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
         Assert.Equal(1000, body.GetProperty("total_cents").GetInt32());
         Assert.StartsWith("ord-", body.GetProperty("id").GetString());
     }
@@ -72,7 +76,7 @@ public class EndpointTests(WebApplicationFactory<Program> factory)
             items = new[] { new { sku = "WIDGET-01", quantity, unit_price_cents = price } },
         };
 
-        var response = await _client.PostAsJsonAsync("/api/v1/orders", payload);
+        var response = await _client.PostAsJsonAsync("/api/v1/orders", payload, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -80,7 +84,7 @@ public class EndpointTests(WebApplicationFactory<Program> factory)
     public async Task CreateOrder_RejectsAnEmptyItemList()
     {
         var payload = new { customer_id = "cust-0000abcd", items = Array.Empty<object>() };
-        var response = await _client.PostAsJsonAsync("/api/v1/orders", payload);
+        var response = await _client.PostAsJsonAsync("/api/v1/orders", payload, Ct);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }
