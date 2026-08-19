@@ -20,6 +20,16 @@ on:
         required: false
         type: string
         default: Dockerfile
+      health_path:
+        description: Path the pre-push smoke test polls
+        required: false
+        type: string
+        default: /healthz
+      expected_user:
+        description: uid:gid the image must run as — asserted, not assumed
+        required: false
+        type: string
+        default: 65532:65532
       push:
         description: Push, sign and attest. False on forked PRs, which have no token.
         required: false
@@ -85,8 +95,9 @@ jobs:
         run: |
           set -euxo pipefail
           docker run --rm -d --name smoke -p 8000:8000 "$LOCAL_TAG"
-          scripts/wait-for-endpoint.sh --url http://localhost:8000/healthz --timeout 60
-          test "$(docker inspect --format '{{.Config.User}}' "$LOCAL_TAG")" = "65532:65532"
+          scripts/wait-for-endpoint.sh \
+            --url "http://localhost:8000${{ inputs.health_path }}" --timeout 90
+          test "$(docker inspect --format '{{.Config.User}}' "$LOCAL_TAG")" = "${{ inputs.expected_user }}"
 
       - name: Container logs on failure
         if: failure()

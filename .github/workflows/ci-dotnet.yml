@@ -1,0 +1,95 @@
+---
+name: ci-dotnet
+
+on:
+  pull_request:
+    paths:
+      - services/api-dotnet/**
+      - .github/workflows/ci-dotnet.yml
+      - .github/workflows/reusable-build-attest.yml
+  push:
+    branches: [main]
+    paths:
+      - services/api-dotnet/**
+      - .github/workflows/ci-dotnet.yml
+      - .github/workflows/reusable-build-attest.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-dotnet-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: services/api-dotnet
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+jobs:
+  build-test:
+    name: format, build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore tests/ApiDotnet.Tests.csproj
+
+      - name: Format check
+        run: dotnet format src/ApiDotnet.csproj --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build tests/ApiDotnet.Tests.csproj -c Release --no-restore
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          dotnet test --project tests/ApiDotnet.Tests.csproj -c Release --no-build | tee test.log
+
+      - name: .NET summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### .NET"
+            echo
+            echo '```'
+            tail -n 10 test.log || echo "no test output captured"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dotnet-test-results
+          path: services/api-dotnet/test.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  build:
+    name: build, scan, sign and verify
+    needs: [build-test]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/reusable-build-attest.yml
+    with:
+      service_path: services/api-dotnet
+      image_name: api-dotnet
+      health_path: /healthz
+      expected_user: "1654:1654"
+      push: ${{ !github.event.pull_request.head.repo.fork }}
