@@ -15,6 +15,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 if TYPE_CHECKING:  # stubs are a dev-only dependency, never installed in the image
@@ -23,6 +24,15 @@ if TYPE_CHECKING:  # stubs are a dev-only dependency, never installed in the ima
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_SECRET_ID = "secure-delivery-pipeline/api-python"  # noqa: S105 — a secret name, not a value
+
+# Readiness must answer within its probe timeout. botocore's defaults (60s connect,
+# several retries) would let an unreachable Secrets Manager hang the probe until
+# Kubernetes restarts a process that is otherwise perfectly healthy.
+BOTO_CONFIG = Config(
+    connect_timeout=2,
+    read_timeout=3,
+    retries={"max_attempts": 2, "mode": "standard"},
+)
 
 
 @dataclass(frozen=True)
@@ -41,6 +51,7 @@ def secrets_client() -> SecretsManagerClient:
         "secretsmanager",
         endpoint_url=os.getenv("AWS_ENDPOINT_URL"),
         region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+        config=BOTO_CONFIG,
     )
 
 
