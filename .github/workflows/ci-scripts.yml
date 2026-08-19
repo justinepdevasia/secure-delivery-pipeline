@@ -69,6 +69,11 @@ jobs:
           set -euo pipefail
           bats --formatter tap scripts/tests/ | tee bats.tap
 
+      - name: Enforce the repository's own action pinning rule
+        run: |
+          set -euo pipefail
+          scripts/audit-action-pins.sh --check --json | tee action-pins.json
+
       - name: Bash summary
         if: always()
         run: |
@@ -81,6 +86,7 @@ jobs:
             echo "| shellcheck --severity=style | ${{ job.status }} |"
             echo "| shfmt -d -i 2 -ci | ${{ job.status }} |"
             echo "| bats | $(grep -c '^ok ' bats.tap || echo 0) passed, $(grep -c '^not ok ' bats.tap || echo 0) failed |"
+            echo "| action pins | $(jq -r '.scanned' action-pins.json) scanned, $(jq -r '.unpinned' action-pins.json) unpinned |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload bats output
@@ -89,5 +95,68 @@ jobs:
         with:
           name: bats-tap
           path: bats.tap
+          if-no-files-found: warn
+          retention-days: 7
+
+  python:
+    name: python tooling lint, type check and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/pyproject.toml
+
+      - name: Install pipeline-tools
+        run: pip install -e '.[dev]'
+
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Mypy strict
+        run: mypy --strict
+
+      - name: Pytest with coverage gate
+        run: |
+          set -euo pipefail
+          pytest | tee coverage.log
+
+      - name: Audit this repository's workflows with its own auditor
+        working-directory: .
+        run: |
+          set -euo pipefail
+          workflow-audit .github/workflows --json | tee workflow-audit.json
+
+      - name: Python summary
+        if: always()
+        run: |
+          set -euo pipefail
+          {
+            echo "### pipeline-tools"
+            echo
+            echo '```'
+            tail -n 12 coverage.log || echo "no coverage output captured"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload tooling reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pipeline-tools-reports
+          path: |
+            tools/coverage.xml
+            workflow-audit.json
           if-no-files-found: warn
           retention-days: 7
