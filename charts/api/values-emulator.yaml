@@ -13,13 +13,11 @@ service:
   type: ClusterIP
   port: 80
 
+# Limits removed "temporarily, to unblock a load test" — the way it usually happens.
 resources:
   requests:
     cpu: 25m
     memory: 64Mi
-  limits:
-    cpu: 200m
-    memory: 192Mi
 
 env:
   appEnv: emulated
