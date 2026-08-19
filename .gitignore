@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# .NET
+bin/
+obj/
+*.user
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+crash.log
+
+# Helm
+charts/**/charts/
+*.tgz
+
+# Pipeline scratch
+sbom/
+*.sarif
+diagnostics/
+diagnostics.tar.gz
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

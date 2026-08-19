@@ -1,0 +1,31 @@
+---
+# Throwaway harness for testing a single step in isolation.
+# Deleted before publishing (see buildspec.md §12, phase 16).
+name: scratch
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: What is being tested
+        required: false
+        default: nothing in particular
+
+permissions:
+  contents: read
+
+jobs:
+  scratch:
+    name: scratch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Report runner context
+        run: |
+          set -euxo pipefail
+          echo "note: ${{ inputs.note }}" >> "$GITHUB_STEP_SUMMARY"
+          uname -a
+          docker version --format '{{.Server.Version}}'
+          df -h / | tee -a "$GITHUB_STEP_SUMMARY"
