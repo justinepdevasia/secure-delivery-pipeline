@@ -1,0 +1,76 @@
+---
+name: setup-floci
+description: >
+  Start the Floci AWS emulator inside the runner and export the AWS_* environment
+  that points every SDK, the CLI and Terraform at it.
+
+inputs:
+  image:
+    description: Emulator image, pinned by digest. Never a tag.
+    required: false
+    default: floci/floci@sha256:bec9b9f749322444a57fb0f00d3e007ffd49015162361aab84ccecd9b4f5f8ed
+  region:
+    description: Region the emulator answers for
+    required: false
+    default: us-east-1
+  timeout:
+    description: Seconds to wait for the health endpoint
+    required: false
+    default: "120"
+  free-disk-space:
+    description: Reclaim runner disk before starting. k3s, a registry and app images add up.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space
+      if: inputs.free-disk-space == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        df -h / | tail -n 1
+        sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/swift || true
+        docker system prune -af --volumes >/dev/null 2>&1 || true
+        df -h / | tail -n 1
+
+    - name: Start the emulator
+      shell: bash
+      run: |
+        set -euxo pipefail
+        # -u root and the Docker socket are both required: the EKS, ECR and EC2
+        # implementations start real containers (k3s, registry:2) alongside this one.
+        docker run -d --name floci -p 4566:4566 -u root \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -e FLOCI_STORAGE_MODE=memory \
+          "${{ inputs.image }}"
+
+    - name: Wait for the emulator to answer
+      shell: bash
+      run: |
+        set -euo pipefail
+        "${GITHUB_ACTION_PATH}/../../../scripts/wait-for-endpoint.sh" \
+          --url http://localhost:4566/_localstack/health \
+          --timeout "${{ inputs.timeout }}"
+
+    - name: Export the AWS environment
+      shell: bash
+      run: |
+        set -euo pipefail
+        {
+          echo "AWS_ENDPOINT_URL=http://localhost:4566"
+          echo "AWS_ACCESS_KEY_ID=test"
+          echo "AWS_SECRET_ACCESS_KEY=test"
+          echo "AWS_DEFAULT_REGION=${{ inputs.region }}"
+          echo "AWS_REGION=${{ inputs.region }}"
+        } >> "$GITHUB_ENV"
+
+    - name: Confirm the emulator answers a signed request
+      shell: bash
+      env:
+        AWS_ENDPOINT_URL: http://localhost:4566
+        AWS_ACCESS_KEY_ID: test
+        AWS_SECRET_ACCESS_KEY: test
+        AWS_DEFAULT_REGION: ${{ inputs.region }}
+      run: aws sts get-caller-identity

@@ -159,14 +159,22 @@ resource "aws_eks_node_group" "system" {
 }
 
 # The cluster's OIDC provider — the thing that makes IRSA work at all.
+#
+# The emulator's issuer URL serves no real certificate, so the thumbprint cannot
+# be fetched there. IRSA does not function under the emulator regardless — it
+# needs a real OIDC provider federated with real IAM — so the emulated run uses a
+# placeholder and the production path fetches the certificate properly.
 data "tls_certificate" "eks_oidc" {
-  url = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  count = var.emulator.enabled ? 0 : 1
+  url   = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
 resource "aws_iam_openid_connect_provider" "eks" {
-  url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.eks_oidc.certificates[0].sha1_fingerprint]
+  url            = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  client_id_list = ["sts.amazonaws.com"]
+  thumbprint_list = var.emulator.enabled ? ["0000000000000000000000000000000000000000"] : [
+    data.tls_certificate.eks_oidc[0].certificates[0].sha1_fingerprint
+  ]
 }
 
 # IRSA role for the api-python service account. Scoped to one namespace and one
