@@ -7,7 +7,7 @@
 # directory copied between them is on the interpreter's default path.
 
 # python:3.13-slim-trixie
-FROM python@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS builder
+FROM python@sha256:8edbf9e42c7fb168b9c523718ed907117e6d2e60f5889c0c499bbda3a787da53 AS builder
 
 WORKDIR /build
 
