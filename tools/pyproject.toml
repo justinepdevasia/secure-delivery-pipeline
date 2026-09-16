@@ -16,7 +16,7 @@ dev = [
   "pytest-cov==7.1.0",
   "ruff==0.16.3",
   "mypy==2.3.1",
-  "types-PyYAML==6.0.12.20260815",
+  "types-PyYAML==6.0.12.20260906",
 ]
 
 # Workflows call these names, never `python path/to/file.py`.
