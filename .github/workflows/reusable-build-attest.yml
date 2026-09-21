@@ -80,10 +80,10 @@ jobs:
           echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build image locally (not pushed yet)
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.service_path }}
           file: ${{ inputs.service_path }}/${{ inputs.dockerfile }}
@@ -146,7 +146,7 @@ jobs:
       - name: Push image tagged by commit SHA
         id: push
         if: inputs.push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.service_path }}
           file: ${{ inputs.service_path }}/${{ inputs.dockerfile }}
@@ -161,7 +161,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM
         if: inputs.push
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
           format: cyclonedx-json
@@ -171,7 +171,7 @@ jobs:
 
       - name: Generate SPDX SBOM
         if: inputs.push
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
           format: spdx-json
