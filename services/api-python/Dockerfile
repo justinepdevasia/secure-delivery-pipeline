@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir --no-deps --prefix=/install .
 
 # gcr.io/distroless/python3-debian13:nonroot — no shell, no package manager,
 # which is what keeps the Trivy CRITICAL/HIGH gate clean.
-FROM gcr.io/distroless/python3-debian13@sha256:eff0a6050f5ea9e8154c3d137d468901864803ce3c7f4657d419e64f3f1f8b40
+FROM gcr.io/distroless/python3-debian13@sha256:0e48fa084c225991c3f4e133306cd64fdca9ed028215a2d8a67eb798c857a981
 
 ARG SOURCE_URL="https://github.com/justinepdevasia/secure-delivery-pipeline"
 ARG REVISION="unknown"
