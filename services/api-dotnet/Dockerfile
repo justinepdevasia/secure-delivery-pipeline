@@ -15,7 +15,7 @@ COPY src ./src
 RUN dotnet publish ./src/ApiDotnet.csproj -c Release -o /app --no-restore
 
 # mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled
-FROM mcr.microsoft.com/dotnet/aspnet@sha256:0839314d08bb65da369135389a5d8291f75ace587fbb0488f469eb92c62eef68
+FROM mcr.microsoft.com/dotnet/aspnet@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee
 
 ARG SOURCE_URL="https://github.com/justinepdevasia/secure-delivery-pipeline"
 ARG REVISION="unknown"
