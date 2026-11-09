@@ -9,22 +9,22 @@ description = "Demo FastAPI service exercised by the secure-delivery-pipeline"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
-  "fastapi==0.141.1",
-  "uvicorn[standard]==0.52.3",
-  "pydantic==2.13.4",
-  "boto3==1.43.74",
+  "fastapi==0.162.0",
+  "uvicorn[standard]==0.54.0",
+  "pydantic==2.14.3",
+  "boto3==1.43.125",
   "prometheus-client==0.26.0",
   "python-json-logger==4.2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest==9.1.1",
+  "pytest==9.2.0",
   "pytest-cov==7.1.0",
   "httpx==0.28.1",
-  "ruff==0.16.3",
-  "mypy==2.3.1",
-  "boto3-stubs[secretsmanager]==1.43.74",
+  "ruff==0.17.4",
+  "mypy==2.4.1",
+  "boto3-stubs[secretsmanager]==1.43.125",
 ]
 
 [tool.setuptools.packages.find]
